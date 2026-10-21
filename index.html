@@ -72,7 +72,8 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>On a computer:</strong> drag the scene to look around, scroll to zoom, click the console, and press Space to launch.</p>
       <p class="hint"><strong>Typing exact values:</strong> tap any yellow number on the console (launch speed, angle, height or g) to open a number pad. On a computer you can also type the number on your keyboard and press Enter.</p>
       <p class="hint"><strong>Worlds:</strong> press the World button on the console to choose from all eight planets, the Moon, Phobos, Titan and Pluto. Each world sets its own gravity, using NASA values (for the gas giants, g is measured at the 1-bar cloud level because they have no solid surface). The Gravity button lets you pick a different world’s gravity without changing the scenery.</p>
-      <p class="hint"><strong>Sound:</strong> the cannon booms, the ball whooshes louder and higher as it speeds up, a tick marks each time dot, and there’s a thud on landing. In VR the sounds come from where they happen, so you hear the ball travel. Use the Sound button on the console to mute.</p>
+      <p class="hint"><strong>Sound:</strong> the cannon booms, the ball whooshes louder and higher as it speeds up, a tick marks each time dot, and there’s a thud on landing. In VR the sounds come from where they happen, so you hear the ball travel. Use the Sound button on the console to mute the effects. Calm background music plays too; the Music button turns it on or off separately.</p>
+      <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
   </main>
@@ -83,7 +84,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 /* ---------- state & physics ---------- */
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
-const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,sound:true,scene:2,picker:null,g:9.8,keypad:null};
+const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,sound:true,music:true,scene:2,picker:null,g:9.8,keypad:null};
 // g values: NASA planetary fact sheets (equatorial, incl. rotation; gas giants at the 1-bar level); Titan 1.35, Phobos 0.0057 (mean), Pluto 0.62
 const BODIES=[
   {name:'Mercury',g:3.7,sky:0x020306,fog:[3500,5000],ground:0x8a8178,hemi:[0x8899aa,0x222222,0.5],sun:[0xffffff,3.6],grid:0.14,note:'Mercury: no atmosphere, so this model is very accurate.'},
@@ -105,7 +106,7 @@ const fmtNum=v=>String(parseFloat((+v).toFixed(4)));
 function gName(){const b=BODIES.find(b=>b.g===S.g);return b?b.name:'Custom';}
 const TS=[1,0.5,0.25,0.1,2,10,50,100];
 const TS_LABEL=['Real time','Slow motion 0.5×','Slow motion 0.25×','Slow motion 0.1×','Fast forward 2×','Fast forward 10×','Fast forward 50×','Fast forward 100×'];
-const VIEWS=['Side','Launcher','Landing'];
+const VIEWS=['Side','Launcher','Landing','Follow'];
 const LIMITS={u:[1,40],angle:[0,90],h:[0,50]};
 function speedCfg(){return lowG()?{min:0.1,max:3,s1:0.1,s5:0.5}:{min:1,max:40,s1:1,s5:5};}
 function limitsFor(key){if(key==='u'){const c=speedCfg();return [c.min,c.max];} if(key==='g') return [0.001,50]; return LIMITS[key];}
@@ -359,7 +360,7 @@ const thudSnd=posSound(thudBuf,landSpot,0.9);
 const whoosh=posSound(noiseBuf,ball,0); whoosh.setLoop(true);
 const whooshFilter=actx.createBiquadFilter(); whooshFilter.type='bandpass'; whooshFilter.Q.value=0.9; whoosh.setFilter(whooshFilter);
 const audioReady=()=>actx.state==='running';
-function audioUnlock(){if(!audioReady()) actx.resume().catch(()=>{});}
+function audioUnlock(){if(!audioReady()) actx.resume().then(startMusic).catch(()=>{}); else startMusic();}
 function replay(s){if(!audioReady())return; if(s.isPlaying)s.stop(); s.play();}
 function beep(freq,dur,vol,type='sine'){
   if(!S.sound||!audioReady())return;
@@ -377,6 +378,53 @@ function updateWhoosh(L){
   whoosh.gain.gain.setTargetAtTime(clamp(sp/40,0.05,1)*0.7,t,0.05);
 }
 function setMute(){listener.setMasterVolume(S.sound?1:0);}
+
+/* ---------- background music (generated ambient, independent of Sound) ---------- */
+const musicGain=actx.createGain(); musicGain.gain.value=0; musicGain.connect(actx.destination);
+const echo=actx.createDelay(1); echo.delayTime.value=0.375;
+const echoFb=actx.createGain(); echoFb.gain.value=0.35;
+const echoLP=actx.createBiquadFilter(); echoLP.type='lowpass'; echoLP.frequency.value=2500;
+echo.connect(echoLP).connect(echoFb).connect(echo); echo.connect(musicGain);
+const padFilter=actx.createBiquadFilter(); padFilter.type='lowpass'; padFilter.frequency.value=900; padFilter.Q.value=0.5; padFilter.connect(musicGain);
+const padLfo=actx.createOscillator(), padLfoAmt=actx.createGain(); padLfo.frequency.value=0.05; padLfoAmt.gain.value=350;
+padLfo.connect(padLfoAmt).connect(padFilter.frequency); padLfo.start();
+const CHORDS=[[48,55,60,64,71],[45,52,57,60,67],[41,48,57,60,64],[43,50,55,59,62]];
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+const BEAT=0.5, CHORD_BEATS=16;
+let musicNext=0, musicStep=0, musicTimer=null;
+function padNote(f,t,dur){
+  [['triangle',0.035,-6],['sawtooth',0.016,6]].forEach(([type,v,det])=>{
+    const o=actx.createOscillator(), g=actx.createGain(); o.type=type; o.frequency.value=f; o.detune.value=det;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(v,t+2); g.gain.setValueAtTime(v,t+dur-2.5); g.gain.linearRampToValueAtTime(0,t+dur+0.5);
+    o.connect(g).connect(padFilter); o.start(t); o.stop(t+dur+0.6);
+  });
+}
+function bassNote(f,t,dur){
+  const o=actx.createOscillator(), g=actx.createGain(); o.type='sine'; o.frequency.value=f;
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.09,t+1.5); g.gain.setValueAtTime(0.09,t+dur-2); g.gain.linearRampToValueAtTime(0,t+dur+0.3);
+  o.connect(g).connect(musicGain); o.start(t); o.stop(t+dur+0.4);
+}
+function pluck(f,t,vol){
+  const o=actx.createOscillator(), g=actx.createGain(); o.type='sine'; o.frequency.value=f;
+  g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+1.2);
+  o.connect(g); g.connect(musicGain); g.connect(echo); o.start(t); o.stop(t+1.3);
+}
+function scheduleMusic(){
+  if(!audioReady()||!S.music) return;
+  const now=actx.currentTime, ahead=now+1.0;
+  if(musicNext<now) musicNext=now+0.1;
+  while(musicNext<ahead){
+    const ch=CHORDS[Math.floor(musicStep/CHORD_BEATS)%CHORDS.length], beat=musicStep%CHORD_BEATS;
+    if(beat===0){const dur=CHORD_BEATS*BEAT; ch.slice(1).forEach(m=>padNote(mtof(m),musicNext,dur)); bassNote(mtof(ch[0]-12),musicNext,dur);}
+    if(beat%2===0&&Math.random()<0.7) pluck(mtof(ch[1+Math.floor(Math.random()*4)]+12),musicNext,0.05);
+    musicNext+=BEAT; musicStep++;
+  }
+}
+function startMusic(){
+  if(!audioReady()) return;
+  if(!musicTimer) musicTimer=setInterval(scheduleMusic,200);
+  musicGain.gain.setTargetAtTime(S.music?0.5:0,actx.currentTime,0.6);
+}
 
 /* ---------- trails & time markers ---------- */
 const dotGeo=new THREE.SphereGeometry(0.14,12,8);
@@ -456,6 +504,8 @@ function applyView(){
   }else if(v==='Launcher'){
     dolly.position.set(-1.2,S.h,1.1); dolly.rotation.y=-Math.PI/2; lookYaw=0.06;
     lookPitch=clamp(Math.atan2(H-S.h,R*0.5),-0.3,0.6)*0.6;
+  }else if(v==='Follow'){
+    const L=live(); dolly.position.set(L.x,Math.max(0,L.y-1.4),followDist()); dolly.rotation.y=0; lookYaw=0; lookPitch=-0.03;
   }else{
     dolly.position.set(R+Math.max(4,R*0.06),0,3); dolly.rotation.y=Math.PI/2; lookYaw=-0.05;
     lookPitch=Math.atan2(H*0.6,R*0.6);
@@ -463,6 +513,8 @@ function applyView(){
   updateDesktopCam();
 }
 function updateDesktopCam(){if(!renderer.xr.isPresenting){camera.position.set(0,1.6,0);camera.rotation.set(lookPitch,lookYaw,0);}}
+function followDist(){const p=flight||predict(); return clamp(0.06*Math.max(p.R,p.H,20),4,80);}
+const followTarget=new THREE.Vector3();
 
 /* ---------- console panel (canvas: DOM on desktop, texture in VR) ---------- */
 const PW=1200, PH=800;
@@ -534,8 +586,9 @@ function drawPanel(){
     button('pickcancel',940,665,230,100,'Cancel','normal',28);
     panelTex.needsUpdate=true; return;
   }
-  button('scene',790,18,190,52,'World: '+BODIES[S.scene].name+' ▾','normal',22);
-  button('sound',990,18,180,52,S.sound?'🔊 Sound on':'🔇 Sound off',S.sound?'on':'off',22);
+  button('scene',660,18,180,52,'World: '+BODIES[S.scene].name+' ▾','normal',22);
+  button('music',850,18,150,52,S.music?'♪ Music on':'♪ Music off',S.music?'on':'off',21);
+  button('sound',1010,18,160,52,S.sound?'🔊 Sound on':'🔇 Sound off',S.sound?'on':'off',21);
 
   const sc=speedCfg();
   const rows=[['u','Launch speed  u',v=>fmtNum(v)+' m/s',sc.s5,sc.s1],['angle','Launch angle  θ',v=>fmtNum(v)+'°',5,1],['h','Launch height  h',v=>fmtNum(v)+' m',5,1]];
@@ -616,6 +669,7 @@ function act(id){
     case 'ts': S.tsi=(S.tsi+1)%TS.length; break;
     case 'vectors': case 'proj': case 'markers': case 'answers': S[id]=!S[id]; break;
     case 'scene': S.picker='scene'; break;
+    case 'music': S.music=!S.music; startMusic(); break;
     case 'sound': S.sound=!S.sound; setMute(); break;
     case 'launch': launch(); break;
     case 'clear': clearTrails(); onParams(); break;
@@ -718,6 +772,10 @@ renderer.setAnimationLoop(()=>{
   const L=live();
   ball.position.set(L.x,L.y,0);
   if(flight&&!flight.done&&whoosh.isPlaying) updateWhoosh(L);
+  if(VIEWS[S.viewIdx]==='Follow'){
+    followTarget.set(L.x,Math.max(0,L.y-1.4),followDist());
+    dolly.position.lerp(followTarget,1-Math.exp(-dt*6));
+  }
   groundDot.position.set(L.x,0.05,0); poleDot.position.set(POLE_X,L.y,0);
   groundDot.visible=poleDot.visible=S.proj;
   camera.getWorldPosition(camPos);

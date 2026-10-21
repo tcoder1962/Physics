@@ -70,6 +70,9 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <canvas id="panel" role="application" aria-label="Simulation console: adjust launch speed, angle, height and gravity, then launch"></canvas>
       <p class="hint"><strong>On Quest 3:</strong> open this page in the Meta Quest Browser and tap <em>Enter VR</em>. The console floats in front of you; point a controller (or pinch with your hand) at a button to press it. If the button says VR isn’t available, open the page in its own browser tab rather than inside another page.</p>
       <p class="hint"><strong>On a computer:</strong> drag the scene to look around, scroll to zoom, click the console, and press Space to launch.</p>
+      <p class="hint"><strong>Typing exact values:</strong> tap any yellow number on the console (launch speed, angle, height or g) to open a number pad. On a computer you can also type the number on your keyboard and press Enter.</p>
+      <p class="hint"><strong>Worlds:</strong> press the World button on the console to choose from all eight planets, the Moon, Phobos, Titan and Pluto. Each world sets its own gravity, using NASA values (for the gas giants, g is measured at the 1-bar cloud level because they have no solid surface). The Gravity button lets you pick a different world’s gravity without changing the scenery.</p>
+      <p class="hint"><strong>Sound:</strong> the cannon booms, the ball whooshes louder and higher as it speeds up, a tick marks each time dot, and there’s a thud on landing. In VR the sounds come from where they happen, so you hear the ball travel. Use the Sound button on the console to mute.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
   </main>
@@ -80,12 +83,34 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 /* ---------- state & physics ---------- */
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
-const S={u:20,angle:45,h:0,gi:0,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0};
-const GRAV=[{name:'Earth',g:9.8},{name:'Mars',g:3.7},{name:'Moon',g:1.6},{name:'Jupiter',g:24.8}];
-const TS=[1,0.5,0.25,0.1];
-const TS_LABEL=['Real time','Slow motion 0.5×','Slow motion 0.25×','Slow motion 0.1×'];
+const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,sound:true,scene:2,picker:null,g:9.8,keypad:null};
+// g values: NASA planetary fact sheets (equatorial, incl. rotation; gas giants at the 1-bar level); Titan 1.35, Phobos 0.0057 (mean), Pluto 0.62
+const BODIES=[
+  {name:'Mercury',g:3.7,sky:0x020306,fog:[3500,5000],ground:0x8a8178,hemi:[0x8899aa,0x222222,0.5],sun:[0xffffff,3.6],grid:0.14,note:'Mercury: no atmosphere, so this model is very accurate.'},
+  {name:'Venus',g:8.9,sky:0xd9b36a,fog:[80,900],ground:0x8c6a42,hemi:[0xffe2a8,0x4a3418,1.6],sun:[0xffd890,1.0],grid:0.16,note:'Venus: surface pressure 92× Earth’s; real drag is huge.'},
+  {name:'Earth',g:9.8,sky:0x9cc9ee,fog:[300,1500],ground:0x6f9e57,hemi:[0xffffff,0x4a6b3a,2.2],sun:[0xffffff,2.0],grid:0.22,note:'Earth: real air resistance would shorten these ranges.'},
+  {name:'Moon',g:1.6,sky:0x02030a,fog:[3500,5000],ground:0x9a9a96,hemi:[0x8899aa,0x222222,0.5],sun:[0xffffff,3.2],grid:0.14,note:'Moon: no atmosphere, so this model is very accurate.'},
+  {name:'Mars',g:3.7,sky:0xd8a27a,fog:[200,1600],ground:0xb5623a,hemi:[0xffd9b8,0x5a2a18,1.7],sun:[0xffe0c0,1.9],grid:0.16,note:'Mars: thin atmosphere, so drag is small.'},
+  {name:'Phobos',g:0.0057,sky:0x010205,fog:[3500,5000],ground:0x4d4741,hemi:[0x8899aa,0x221a14,0.6],sun:[0xffffff,3.0],grid:0.14,note:'Phobos: escape speed ≈ 11 m/s; g varies 0.003–0.007.'},
+  {name:'Jupiter',g:23.1,sky:0xd8b48a,fog:[150,1400],ground:0xc9a27a,hemi:[0xfff0d8,0x6a4a2a,1.8],sun:[0xfff2e0,1.0],grid:0.18,note:'Jupiter: no solid surface; g is at the 1-bar cloud level.'},
+  {name:'Saturn',g:9.0,sky:0xe6cf9a,fog:[150,1400],ground:0xd6bb84,hemi:[0xfff4dc,0x7a6238,1.8],sun:[0xfff2e0,0.9],grid:0.18,note:'Saturn: no solid surface; g is at the 1-bar cloud level.'},
+  {name:'Titan',g:1.35,sky:0xc27a2c,fog:[90,1000],ground:0x5e4a32,hemi:[0xffc27a,0x2a1e10,1.4],sun:[0xffb060,0.6],grid:0.16,note:'Titan: thick hazy atmosphere; real drag would be large.'},
+  {name:'Uranus',g:8.7,sky:0x9fd6dc,fog:[150,1400],ground:0x86c9d0,hemi:[0xeaffff,0x3a6a70,1.8],sun:[0xffffff,0.7],grid:0.18,note:'Uranus: no solid surface; g is at the 1-bar cloud level.'},
+  {name:'Neptune',g:11.0,sky:0x3f66c4,fog:[150,1400],ground:0x3459b0,hemi:[0xdfe8ff,0x1a2a5a,1.8],sun:[0xffffff,0.6],grid:0.18,note:'Neptune: no solid surface; g is at the 1-bar cloud level.'},
+  {name:'Pluto',g:0.62,sky:0x010205,fog:[3500,5000],ground:0xd6c4aa,hemi:[0x8899aa,0x2a2420,0.7],sun:[0xffffff,2.2],grid:0.14,note:'Pluto: very thin atmosphere; drag is negligible.'}
+];
+const GRAV=BODIES;
+const lowG=()=>S.g<0.05;
+const fmtNum=v=>String(parseFloat((+v).toFixed(4)));
+function gName(){const b=BODIES.find(b=>b.g===S.g);return b?b.name:'Custom';}
+const TS=[1,0.5,0.25,0.1,2,10,50,100];
+const TS_LABEL=['Real time','Slow motion 0.5×','Slow motion 0.25×','Slow motion 0.1×','Fast forward 2×','Fast forward 10×','Fast forward 50×','Fast forward 100×'];
 const VIEWS=['Side','Launcher','Landing'];
 const LIMITS={u:[1,40],angle:[0,90],h:[0,50]};
+function speedCfg(){return lowG()?{min:0.1,max:3,s1:0.1,s5:0.5}:{min:1,max:40,s1:1,s5:5};}
+function limitsFor(key){if(key==='u'){const c=speedCfg();return [c.min,c.max];} if(key==='g') return [0.001,50]; return LIMITS[key];}
+const UNITS={u:{label:'launch speed u',unit:'m/s'},angle:{label:'launch angle θ',unit:'°'},h:{label:'launch height h',unit:'m'},g:{label:'gravity g',unit:'m/s²'}};
+const withUnit=(t,u)=>u==='°'?t+'°':t+' '+u;
 const TRAIL_COLORS=[0xd00000,0x6a00f4,0x00704f,0xd18f00];
 const MAX_TRAILS=4;
 const COL={vx:0xff006e,vy:0x0a3d91,v:0x111111,ball:0xff8c00};
@@ -93,16 +118,16 @@ const hex=c=>'#'+c.toString(16).padStart(6,'0');
 const POLE_X=-3;
 
 function predict(){
-  const g=GRAV[S.gi].g, th=S.angle*Math.PI/180;
+  const g=S.g, th=S.angle*Math.PI/180;
   const ux=S.u*Math.cos(th), uy=S.u*Math.sin(th);
   const T=(uy+Math.sqrt(uy*uy+2*g*S.h))/g;
   const H=S.h+Math.max(uy,0)**2/(2*g);
   return {g,ux,uy,T,H,R:ux*T};
 }
 const posAt=(f,t)=>({x:f.ux*t,y:f.h+f.uy*t-0.5*f.g*t*t});
-function niceStep(x){for(const s of [0.1,0.2,0.25,0.5,1,2,5,10]) if(s>=x) return s; return 10;}
+function niceStep(x){for(const s of [0.1,0.2,0.25,0.5,1,2,5,10,20,30,60,120]) if(s>=x) return s; return 120;}
 
-let trails=[], flight=null, colorIdx=0, vis=1, lastMarkDt=null;
+let trails=[], flight=null, colorIdx=0, vis=1, lastMarkDt=null, arrowK=0.2;
 let lookYaw=0, lookPitch=0;
 
 /* ---------- renderer & scene ---------- */
@@ -117,20 +142,131 @@ const scene=new THREE.Scene();
 const SKY=0x9cc9ee;
 scene.background=new THREE.Color(SKY);
 scene.fog=new THREE.Fog(SKY,300,1500);
-const camera=new THREE.PerspectiveCamera(70,1,0.05,4000);
+const camera=new THREE.PerspectiveCamera(70,1,0.1,6000);
 camera.rotation.order='YXZ';
 camera.position.set(0,1.6,0);
 const dolly=new THREE.Group(); dolly.add(camera); scene.add(dolly);
 
-scene.add(new THREE.HemisphereLight(0xffffff,0x4a6b3a,2.2));
+const hemi=new THREE.HemisphereLight(0xffffff,0x4a6b3a,2.2); scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffffff,2.0); sun.position.set(40,80,30); scene.add(sun);
 
-const ground=new THREE.Mesh(new THREE.PlaneGeometry(4000,4000),new THREE.MeshStandardMaterial({color:0x6f9e57,roughness:1}));
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(8000,8000),new THREE.MeshStandardMaterial({color:0x6f9e57,roughness:1}));
 ground.rotation.x=-Math.PI/2; scene.add(ground);
 const grid=new THREE.GridHelper(2000,200,0xffffff,0xffffff);
 grid.material.transparent=true; grid.material.opacity=0.22; grid.position.y=0.02; scene.add(grid);
 const lane=new THREE.Mesh(new THREE.PlaneGeometry(1200,0.18),new THREE.MeshBasicMaterial({color:0xffffff}));
 lane.rotation.x=-Math.PI/2; lane.position.set(600,0.03,0); scene.add(lane);
+
+/* ---------- scenery: Earth field, Moon, Mars ---------- */
+let seed=20260;
+const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+(function groundTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=256; const g=c.getContext('2d');
+  const img=g.createImageData(256,256);
+  for(let i=0;i<65536;i++){const v=205+Math.floor(Math.random()*50); img.data[i*4]=img.data[i*4+1]=img.data[i*4+2]=v; img.data[i*4+3]=255;}
+  g.putImageData(img,0,0);
+  for(let i=0;i<60;i++){g.fillStyle=`rgba(0,0,0,${0.03+Math.random()*0.05})`; g.beginPath(); g.arc(40+Math.random()*176,40+Math.random()*176,5+Math.random()*30,0,Math.PI*2); g.fill();}
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(800,800); t.anisotropy=8;
+  ground.material.map=t; ground.material.needsUpdate=true;
+})();
+function spot(minAbsZ){for(;;){const x=-400+rnd()*1600,z=(rnd()*2-1)*800; if(Math.abs(z)>minAbsZ) return [x,z];}}
+function addCraters(group,n,rimCol,floorCol){
+  const rimMat=new THREE.MeshStandardMaterial({color:rimCol,roughness:1});
+  const floorMat=new THREE.MeshStandardMaterial({color:floorCol,roughness:1,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
+  const torus=new THREE.TorusGeometry(1,0.14,6,28), disc=new THREE.CircleGeometry(1,28); disc.rotateX(-Math.PI/2);
+  for(let i=0;i<n;i++){
+    const r=2+Math.pow(rnd(),2.2)*40, [x,z]=spot(6+r);
+    const rim=new THREE.Mesh(torus,rimMat); rim.rotation.x=Math.PI/2; rim.scale.set(r,r,r*0.35); rim.position.set(x,0,z); group.add(rim);
+    const f=new THREE.Mesh(disc,floorMat); f.scale.set(r,1,r); f.position.set(x,0.01,z); group.add(f);
+  }
+}
+function addRocks(group,n,col,maxS){
+  const geo=new THREE.DodecahedronGeometry(1,0), mat=new THREE.MeshStandardMaterial({color:col,roughness:1,flatShading:true});
+  for(let i=0;i<n;i++){
+    const s=0.2+Math.pow(rnd(),3)*maxS, [x,z]=spot(5+s), m=new THREE.Mesh(geo,mat);
+    m.scale.set(s*(0.7+rnd()*0.6),s*(0.4+rnd()*0.5),s*(0.7+rnd()*0.6)); m.rotation.set(rnd()*3,rnd()*3,rnd()*3);
+    m.position.set(x,s*0.15,z); group.add(m);
+  }
+}
+function addRidge(group,n,col,rMin,rMax,mesa){
+  const mat=new THREE.MeshStandardMaterial({color:col,roughness:1,flatShading:true});
+  for(let i=0;i<n;i++){
+    const a=rnd()*Math.PI*2, d=rMin+rnd()*(rMax-rMin), w=120+rnd()*220, h=50+rnd()*160;
+    const m=new THREE.Mesh(mesa?new THREE.CylinderGeometry(w*0.6,w,h,7):new THREE.ConeGeometry(w,h,7),mat);
+    m.position.set(300+Math.cos(a)*d,h/2-2,Math.sin(a)*d); m.rotation.y=rnd()*3; group.add(m);
+  }
+}
+function addStars(group){
+  const n=2000,p=new Float32Array(n*3);
+  for(let i=0;i<n;i++){const u=rnd(),a=rnd()*Math.PI*2,r=2600,s=Math.sqrt(1-u*u); p[i*3]=300+r*s*Math.cos(a); p[i*3+1]=r*u+20; p[i*3+2]=r*s*Math.sin(a);}
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  group.add(new THREE.Points(g,new THREE.PointsMaterial({color:0xffffff,size:2,sizeAttenuation:false,fog:false})));
+}
+function addSkyBall(group,r,col,emis,pos){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,48,24),new THREE.MeshStandardMaterial({color:col,emissive:emis,roughness:1,fog:false}));
+  m.position.set(...pos); group.add(m); return m;
+}
+function addClouds(group,n,cols){
+  const geo=new THREE.SphereGeometry(1,14,8), mats=cols.map(c=>new THREE.MeshStandardMaterial({color:c,roughness:1}));
+  for(let i=0;i<n;i++){
+    const w=8+Math.pow(rnd(),2)*70, [x,z]=spot(6+w*0.7), m=new THREE.Mesh(geo,mats[i%mats.length]);
+    m.scale.set(w,1+rnd()*w*0.12,w*(0.4+rnd()*0.8)); m.position.set(x,-m.scale.y*0.3,z); group.add(m);
+  }
+}
+function addBands(group,cols){
+  const geo=new THREE.PlaneGeometry(8000,1); geo.rotateX(-Math.PI/2);
+  for(let i=0;i<16;i++){
+    const w=60+rnd()*220, z=(rnd()*2-1)*1800; if(Math.abs(z)<w/2+10) continue;
+    const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:cols[i%cols.length],roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));
+    m.scale.z=w; m.position.set(300,0.005,z); group.add(m);
+  }
+}
+function addLakes(group,n,col){
+  const geo=new THREE.CircleGeometry(1,40); geo.rotateX(-Math.PI/2);
+  const mat=new THREE.MeshStandardMaterial({color:col,roughness:0.15,metalness:0.4,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
+  for(let i=0;i<n;i++){const r=15+rnd()*120, [x,z]=spot(10+r), m=new THREE.Mesh(geo,mat); m.scale.set(r,1,r*(0.5+rnd()*0.8)); m.position.set(x,0.01,z); group.add(m);}
+}
+function addRings(group){
+  [[1800,2300,0xe8d6a8,0.55],[2380,3000,0xcbb487,0.4]].forEach(([a,b,c,o])=>{
+    const m=new THREE.Mesh(new THREE.RingGeometry(a,b,160,1),new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,side:THREE.DoubleSide,fog:false,depthWrite:false}));
+    m.rotation.x=Math.PI/2-0.35; m.position.set(300,-600,0); group.add(m);
+  });
+}
+const BUILD={
+  Mercury:g=>{addStars(g);addSkyBall(g,45,0xffffff,0xffffff,[900,420,-2200]);addRidge(g,16,0x6e665e,1300,1800,false);addCraters(g,170,0x9a9086,0x6e665e);addRocks(g,200,0x7a7068,2.2);},
+  Venus:g=>{addRidge(g,18,0x6a4a2a,450,850,true);addRocks(g,320,0x4a3a2a,2.0);addCraters(g,15,0x7a5a36,0x6a4c2c);},
+  Earth:g=>{},
+  Moon:g=>{addStars(g);addSkyBall(g,70,0x3f7fd6,0x0b2550,[-400,700,-1900]);addRidge(g,16,0x6f6f6c,1300,1800,false);addCraters(g,140,0xa8a8a4,0x7d7d79);addRocks(g,220,0x8a8a86,2.5);},
+  Mars:g=>{addRidge(g,16,0x9a4b2c,1000,1500,true);addCraters(g,40,0xa45a36,0x8e4528);addRocks(g,350,0x7a3a24,2.2);},
+  Phobos:g=>{addStars(g);addSkyBall(g,900,0xc1440e,0x3a1204,[300,700,-2400]);addCraters(g,220,0x5e5750,0x3d3833);addRocks(g,160,0x3f3a35,1.8);},
+  Jupiter:g=>{addBands(g,[0xb98a5e,0xe8d2b0,0xa8724a]);addClouds(g,220,[0xf1e2c6,0xd9b48a,0xb88a60]);},
+  Saturn:g=>{addBands(g,[0xcdb27a,0xe9d9ae]);addClouds(g,200,[0xf2e6c4,0xdcc796]);addRings(g);},
+  Titan:g=>{addRidge(g,12,0x4a3a26,700,1000,false);addLakes(g,30,0x15181c);addRocks(g,250,0x7a6a52,1.2);},
+  Uranus:g=>{addBands(g,[0x7cbfc6,0x98d6dc]);addClouds(g,160,[0xc8f1f4,0xa5e0e6]);},
+  Neptune:g=>{addBands(g,[0x2a4a9a,0x3d6ad0]);addClouds(g,120,[0xffffff,0x9fb8ff]);},
+  Pluto:g=>{addStars(g);addSkyBall(g,8,0xffffff,0xffffff,[1500,500,-2000]);addSkyBall(g,85,0x9a8f86,0x1a1814,[-900,500,-2200]);addRidge(g,14,0xf2efe8,1100,1600,false);addCraters(g,30,0xcab89c,0xb8a68a);addRocks(g,150,0xbfae94,2.0);}
+};
+const decoCache={};
+function applyScene(){
+  const b=BODIES[S.scene];
+  scene.background.set(b.sky); scene.fog.color.set(b.sky); scene.fog.near=b.fog[0]; scene.fog.far=b.fog[1];
+  ground.material.color.set(b.ground);
+  hemi.color.set(b.hemi[0]); hemi.groundColor.set(b.hemi[1]); hemi.intensity=b.hemi[2];
+  sun.color.set(b.sun[0]); sun.intensity=b.sun[1];
+  grid.material.opacity=b.grid;
+  for(const k in decoCache) decoCache[k].visible=false;
+  if(!decoCache[b.name]){const g=new THREE.Group(); BUILD[b.name](g); scene.add(g); decoCache[b.name]=g;}
+  decoCache[b.name].visible=true;
+  view.style.background=hex(b.sky);
+}
+function setG(g){
+  const was=lowG(); S.g=g; const now=lowG();
+  if(now&&!was){S.u=2; S.tsi=TS.indexOf(50);}
+  if(was&&!now){S.u=20; if(TS[S.tsi]>1) S.tsi=0;}
+  const c=speedCfg(); S.u=clamp(S.u,c.min,c.max);
+  onParams();
+}
+function setGravity(i){setG(BODIES[i].g);}
 
 function makeLabel(text,worldH,color='#ffffff'){
   const c=document.createElement('canvas'); c.width=256; c.height=96;
@@ -146,9 +282,9 @@ function makeLabel(text,worldH,color='#ffffff'){
 // distance markers
 const postMat=new THREE.MeshStandardMaterial({color:0xf5f5f5});
 const tickMat=new THREE.MeshBasicMaterial({color:0xffffff});
-const marks=[]; for(let d=10;d<=200;d+=10)marks.push(d); for(let d=250;d<=1000;d+=50)marks.push(d);
+const marks=[]; for(let d=10;d<=200;d+=10)marks.push(d); for(let d=250;d<=1000;d+=50)marks.push(d); marks.push(1500,2000);
 for(const d of marks){
-  const k=d<=100?1:d<=300?2.5:6;
+  const k=d<=100?1:d<=300?2.5:d<=1000?6:12;
   const post=new THREE.Mesh(new THREE.BoxGeometry(0.12*k,0.8*k,0.12*k),postMat);
   post.position.set(d,0.4*k,-1.2*k); scene.add(post);
   const l=makeLabel(d+' m',0.9*k); l.position.set(d,1.5*k,-1.2*k); scene.add(l);
@@ -161,7 +297,7 @@ scene.add(pole);
 const poleLabels=new THREE.Group(); scene.add(poleLabels);
 function rebuildPole(H){
   const top=Math.max(10,Math.ceil((H+2)/5)*5);
-  const k=clamp(top/40,1,8);
+  const k=clamp(top/40,1,60);
   pole.scale.set(k,top,k); pole.position.set(POLE_X,top/2,0);
   poleLabels.children.slice().forEach(s=>{poleLabels.remove(s);s.material.map.dispose();s.material.dispose();});
   const step=top<=40?5:top<=150?20:top<=400?50:100;
@@ -173,8 +309,8 @@ const tower=new THREE.Mesh(new THREE.BoxGeometry(3,1,3),new THREE.MeshStandardMa
 scene.add(tower);
 const cannon=new THREE.Group(); scene.add(cannon);
 const barrelPivot=new THREE.Group(); cannon.add(barrelPivot);
-const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.16,1.1,20),new THREE.MeshStandardMaterial({color:0x2b2f36,metalness:.6,roughness:.4}));
-barrel.rotation.z=-Math.PI/2; barrel.position.x=-0.55; barrelPivot.add(barrel);
+const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.07,0.5,16),new THREE.MeshStandardMaterial({color:0x2b2f36,metalness:.6,roughness:.4}));
+barrel.rotation.z=-Math.PI/2; barrel.position.x=-0.25; barrelPivot.add(barrel);
 
 // ball, projections, landing ring
 const ball=new THREE.Mesh(new THREE.SphereGeometry(0.25,32,16),new THREE.MeshStandardMaterial({color:COL.ball,emissive:0x552200,roughness:.4}));
@@ -204,6 +340,43 @@ function setArrow(a,origin,vec,r){
   a.userData.h.scale.set(r*2.6,head,r*2.6); a.userData.h.position.y=len-head;
 }
 const arrVx=makeArrow(COL.vx), arrVy=makeArrow(COL.vy), arrV=makeArrow(COL.v);
+
+/* ---------- sound (generated with Web Audio, no sound files) ---------- */
+const listener=new THREE.AudioListener(); camera.add(listener);
+const actx=listener.context;
+function makeBuffer(dur,fn){
+  const sr=actx.sampleRate,n=Math.floor(sr*dur),b=actx.createBuffer(1,n,sr),d=b.getChannelData(0);
+  fn(d,sr,n); let m=0; for(let i=0;i<n;i++) m=Math.max(m,Math.abs(d[i]));
+  if(m>0) for(let i=0;i<n;i++) d[i]*=0.9/m; return b;
+}
+const boomBuf=makeBuffer(1.4,(d,sr,n)=>{let lp=0,ph=0;for(let i=0;i<n;i++){const t=i/sr;lp+=((Math.random()*2-1)-lp)*0.1;ph+=2*Math.PI*(35+110*Math.exp(-t*3))/sr;d[i]=(lp*2.2*Math.exp(-t*6)+Math.sin(ph)*0.9*Math.exp(-t*3.5))*Math.min(1,t*500);}});
+const thudBuf=makeBuffer(0.6,(d,sr,n)=>{let lp=0,ph=0;for(let i=0;i<n;i++){const t=i/sr;lp+=((Math.random()*2-1)-lp)*0.06;ph+=2*Math.PI*(40+60*Math.exp(-t*12))/sr;d[i]=(lp*2*Math.exp(-t*22)+Math.sin(ph)*Math.exp(-t*9))*Math.min(1,t*800);}});
+const noiseBuf=makeBuffer(2,(d,sr,n)=>{for(let i=0;i<n;i++) d[i]=Math.random()*2-1;});
+function posSound(buf,parent,vol){const a=new THREE.PositionalAudio(listener);a.setBuffer(buf);a.setVolume(vol);a.setRefDistance(12);a.setRolloffFactor(0.7);parent.add(a);return a;}
+const boomSnd=posSound(boomBuf,cannon,1.0);
+const landSpot=new THREE.Object3D(); scene.add(landSpot);
+const thudSnd=posSound(thudBuf,landSpot,0.9);
+const whoosh=posSound(noiseBuf,ball,0); whoosh.setLoop(true);
+const whooshFilter=actx.createBiquadFilter(); whooshFilter.type='bandpass'; whooshFilter.Q.value=0.9; whoosh.setFilter(whooshFilter);
+const audioReady=()=>actx.state==='running';
+function audioUnlock(){if(!audioReady()) actx.resume().catch(()=>{});}
+function replay(s){if(!audioReady())return; if(s.isPlaying)s.stop(); s.play();}
+function beep(freq,dur,vol,type='sine'){
+  if(!S.sound||!audioReady())return;
+  const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();
+  o.type=type; o.frequency.value=freq; g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g).connect(listener.getInput()); o.start(t); o.stop(t+dur+0.02);
+}
+const playClick=()=>beep(880,0.05,0.15);
+const playTick=()=>{if(S.markers) beep(1500,0.03,0.12,'square');};
+function startWhoosh(){if(audioReady()&&!whoosh.isPlaying) whoosh.play();}
+function stopWhoosh(){if(whoosh.isPlaying) whoosh.stop();}
+function updateWhoosh(L){
+  const sp=Math.hypot(L.vx,L.vy),t=actx.currentTime;
+  whooshFilter.frequency.setTargetAtTime(250+sp*45,t,0.05);
+  whoosh.gain.gain.setTargetAtTime(clamp(sp/40,0.05,1)*0.7,t,0.05);
+}
+function setMute(){listener.setMasterVolume(S.sound?1:0);}
 
 /* ---------- trails & time markers ---------- */
 const dotGeo=new THREE.SphereGeometry(0.14,12,8);
@@ -240,20 +413,22 @@ function launch(){
   while(trails.length>=MAX_TRAILS) removeTrail(trails.shift());
   const tr=newTrail(TRAIL_COLORS[colorIdx++%TRAIL_COLORS.length]); trails.push(tr);
   const markDt=niceStep(p.T/16);
-  flight={...p,u:S.u,angle:S.angle,h:S.h,gname:GRAV[S.gi].name,t:0,tr,markDt,nextMark:markDt,vis,done:false};
+  flight={...p,u:S.u,angle:S.angle,h:S.h,gname:gName()==='Custom'?'g = '+fmtNum(S.g):gName(),t:0,tr,markDt,nextMark:markDt,vis,done:false,lx:0,ly:S.h,minStep:Math.max(p.R,p.H,1)/4000};
   tr.info=trailInfo(flight,'in flight…');
-  addPoint(tr,0,S.h); addMarker(flight,0);
+  addPoint(tr,0,S.h);
+  replay(boomSnd); if(p.T>0) startWhoosh();
   if(p.T<=0){flight.done=true; tr.info=trailInfo(flight,'range 0.0 m');}
   lastMarkDt=markDt; applyToggles(); applyView(); drawPanel();
 }
 function stepFlight(dt){
   const f=flight; f.t+=dt*TS[S.tsi];
   if(f.t>=f.T){f.t=f.T;f.done=true;}
-  while(f.nextMark<f.T-1e-9&&f.nextMark<=f.t){addMarker(f,f.nextMark);f.nextMark+=f.markDt;}
-  const q=posAt(f,f.t); addPoint(f.tr,q.x,q.y);
-  if(f.done){f.tr.info=trailInfo(f,`range ${f.R.toFixed(1)} m`);drawPanel();}
+  while(f.nextMark<f.T-1e-9&&f.nextMark<=f.t){addMarker(f,f.nextMark);f.nextMark+=f.markDt;playTick();}
+  const q=posAt(f,f.t);
+  if(f.done||Math.hypot(q.x-f.lx,q.y-f.ly)>=f.minStep){addPoint(f.tr,q.x,q.y);f.lx=q.x;f.ly=q.y;}
+  if(f.done){f.tr.info=trailInfo(f,`range ${f.R.toFixed(1)} m`);stopWhoosh();landSpot.position.set(f.R,0.2,0);replay(thudSnd);drawPanel();}
 }
-function clearTrails(){trails.forEach(removeTrail);trails=[];flight=null;colorIdx=0;}
+function clearTrails(){trails.forEach(removeTrail);trails=[];flight=null;colorIdx=0;stopWhoosh();}
 function live(){
   const p=predict();
   if(flight){const t=flight.t,q=posAt(flight,t);return {t,x:q.x,y:q.y,vx:flight.ux,vy:flight.uy-flight.g*t};}
@@ -262,7 +437,8 @@ function live(){
 
 function onParams(){
   const p=predict();
-  vis=clamp(Math.max(p.R,p.H*1.6)/35,1,6);
+  vis=clamp(Math.max(p.R,p.H*1.6)/35,1,60);
+  arrowK=0.12*Math.max(p.R,1.6*p.H,10)/Math.max(S.u,0.1);
   tower.visible=S.h>0; tower.scale.y=Math.max(S.h,0.01); tower.position.set(-0.5,S.h/2,0);
   cannon.position.set(0,S.h,0); barrelPivot.rotation.z=S.angle*Math.PI/180;
   if(flight&&flight.done) flight=null;
@@ -275,7 +451,7 @@ function onParams(){
 function applyView(){
   const p=predict(), R=Math.max(p.R,6), H=Math.max(p.H,3), v=VIEWS[S.viewIdx];
   if(v==='Side'){
-    const D=clamp(0.62*Math.max(R,1.7*H),9,700);
+    const D=clamp(0.62*Math.max(R,1.7*H),9,3000);
     dolly.position.set(R/2,0,D); dolly.rotation.y=0; lookYaw=0; lookPitch=Math.atan2(H*0.5-1.6,D);
   }else if(v==='Launcher'){
     dolly.position.set(-1.2,S.h,1.1); dolly.rotation.y=-Math.PI/2; lookYaw=0.06;
@@ -313,10 +489,11 @@ function rich(t,x,y,size,color,weight){
 function right(t,x,y,size,color,weight){font(size,weight);ctx.fillStyle=color;ctx.textAlign='right';ctx.fillText(t,x,y);ctx.textAlign='left';}
 function button(id,x,y,w,h,label,kind='normal',size=26){
   buttons.push({id,x,y,w,h});
-  const pal={normal:['#24324a','#33456a'],on:['#16775a','#1e936f'],off:['#24324a','#33456a'],primary:['#f2b81f','#ffcb45']}[kind];
+  const pal={normal:['#24324a','#33456a'],on:['#16775a','#1e936f'],off:['#24324a','#33456a'],primary:['#f2b81f','#ffcb45'],value:['#070c15','#1a2840']}[kind];
   rrect(x,y,w,h,12); ctx.fillStyle=pal[isHover(id)?1:0]; ctx.fill();
+  if(kind==='value'){ctx.lineWidth=2;ctx.strokeStyle='#4a5c7c';ctx.stroke();}
   if(isHover(id)){ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,0.75)';ctx.stroke();}
-  font(size,'600'); ctx.fillStyle=kind==='primary'?'#1a1404':'#ffffff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  font(size,'600'); ctx.fillStyle=kind==='primary'?'#1a1404':kind==='value'?'#ffd77a':'#ffffff'; ctx.textAlign='center'; ctx.textBaseline='middle';
   const lines=label.split('\n'), lh=size*1.15;
   lines.forEach((l,i)=>ctx.fillText(l,x+w/2,y+h/2+1+(i-(lines.length-1)/2)*lh));
   ctx.textBaseline='alphabetic'; ctx.textAlign='left';
@@ -333,20 +510,45 @@ function drawPanel(){
   buttons=[]; ctx.clearRect(0,0,PW,PH);
   rrect(0,0,PW,PH,30); ctx.fillStyle='#0f1828'; ctx.fill();
   rich('Projectile Motion Lab',30,60,38,'#ffffff','600');
-  right('HSC Physics, Module 5',PW-30,58,22,'#93a3ba');
+  rich('HSC Physics, Module 5',440,58,22,'#93a3ba');
   ctx.fillStyle='#22304a'; ctx.fillRect(30,80,PW-60,2);
+  if(S.keypad){
+    const K=S.keypad, lim=limitsFor(K.key), U=UNITS[K.key], cur=K.key==='g'?S.g:S[K.key];
+    font(28,'600'); ctx.fillStyle='#ffffff'; ctx.textAlign='left'; ctx.fillText('Type the '+U.label,30,135);
+    rrect(30,160,610,110,14); ctx.fillStyle='#070c15'; ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle='#ffd77a'; ctx.stroke();
+    font(60,'600'); ctx.textAlign='right';
+    ctx.fillStyle=K.text?'#ffd77a':'#4a5a72'; ctx.fillText(withUnit(K.text||fmtNum(cur),U.unit),615,238); ctx.textAlign='left';
+    rich(`Allowed: ${fmtNum(lim[0])} to ${withUnit(fmtNum(lim[1]),U.unit)}`,30,320,24,'#93a3ba');
+    if(K.err) rich(K.err,30,360,24,'#ff8a7a');
+    button('kp:clear',30,400,610,90,'Clear','normal',28);
+    ['7','8','9','4','5','6','1','2','3','.','0','⌫'].forEach((d,i)=>button('kp:'+(d==='⌫'?'back':d),700+(i%3)*160,100+Math.floor(i/3)*125,145,110,d,'normal',44));
+    button('kp:cancel',30,650,300,110,'Cancel','normal',30);
+    button('kp:ok',340,650,300,110,'OK','primary',34);
+    panelTex.needsUpdate=true; return;
+  }
+  if(S.picker){
+    font(26,'600'); ctx.fillStyle='#c9d4e3'; ctx.textAlign='left';
+    ctx.fillText(S.picker==='scene'?'Choose a world (sets the scenery and its gravity)':'Choose a preset g (the scenery stays the same)',30,130);
+    const cur=S.picker==='scene'?S.scene:BODIES.findIndex(b=>b.g===S.g);
+    BODIES.forEach((b,i)=>button('pick:'+i,30+(i%4)*290,160+Math.floor(i/4)*160,270,140,`${b.name}\n${b.g} m/s²`,cur===i?'on':'normal',30));
+    button('pickcancel',940,665,230,100,'Cancel','normal',28);
+    panelTex.needsUpdate=true; return;
+  }
+  button('scene',790,18,190,52,'World: '+BODIES[S.scene].name+' ▾','normal',22);
+  button('sound',990,18,180,52,S.sound?'🔊 Sound on':'🔇 Sound off',S.sound?'on':'off',22);
 
-  const rows=[['u','Launch speed  u',v=>v+' m/s'],['angle','Launch angle  θ',v=>v+'°'],['h','Launch height  h',v=>v+' m']];
-  rows.forEach(([k,label,fv],i)=>{
+  const sc=speedCfg();
+  const rows=[['u','Launch speed  u',v=>fmtNum(v)+' m/s',sc.s5,sc.s1],['angle','Launch angle  θ',v=>fmtNum(v)+'°',5,1],['h','Launch height  h',v=>fmtNum(v)+' m',5,1]];
+  rows.forEach(([k,label,fv,big,small],i)=>{
     const y=100+i*70;
     rich(label,30,y+36,25,'#c9d4e3');
-    button(k+'-5',250,y,62,54,'−5','normal',22); button(k+'-1',318,y,62,54,'−1','normal',22);
-    rrect(386,y,134,54,10); ctx.fillStyle='#070c15'; ctx.fill();
-    font(28,'600'); ctx.fillStyle='#ffd77a'; ctx.textAlign='center'; ctx.fillText(fv(S[k]),453,y+37); ctx.textAlign='left';
-    button(k+'+1',526,y,62,54,'+1','normal',22); button(k+'+5',594,y,62,54,'+5','normal',22);
+    button(k+'-5',250,y,62,54,'−'+big,'normal',22); button(k+'-1',318,y,62,54,'−'+small,'normal',22);
+    button('edit:'+k,386,y,134,54,fv(S[k]),'value',26);
+    button(k+'+1',526,y,62,54,'+'+small,'normal',22); button(k+'+5',594,y,62,54,'+'+big,'normal',22);
   });
-  const G=GRAV[S.gi];
-  rich('Gravity  g',30,346,25,'#c9d4e3'); button('grav',250,310,406,54,`${G.name}, ${G.g} m/s²  ↻`,'normal',24);
+  rich('Gravity  g',30,346,25,'#c9d4e3');
+  button('edit:g',250,310,200,54,fmtNum(S.g)+' m/s²','value',26);
+  button('grav',460,310,196,54,'Preset: '+gName()+' ▾','normal',21);
   rich('Playback',30,416,25,'#c9d4e3'); button('ts',250,380,406,54,TS_LABEL[S.tsi]+'  ↻','normal',24);
   [['vectors','Vectors'],['proj','Projections'],['markers','Time dots'],['answers','Answers']]
     .forEach(([k,l],i)=>button(k,30+i*157,456,149,56,(S[k]?'✓ ':'')+l,S[k]?'on':'off',22));
@@ -361,9 +563,9 @@ function drawPanel(){
     if(c===COL.v){ctx.strokeStyle='#93a3ba';ctx.lineWidth=2;ctx.stroke();}
     lx=rich(t,lx+34,672,22,'#c9d4e3')+26;
   });
-  rich('Ground dot: horizontal motion (constant v_x)',30,712,21,'#93a3ba');
-  rich('Pole dot: vertical motion (v_y changes by g each second)',30,744,21,'#93a3ba');
-  rich('Model: constant g, no air resistance'+(lastMarkDt?`; time dots every ${lastMarkDt} s`:''),30,776,21,'#93a3ba');
+  rich('Ground dot: horizontal motion; pole dot: vertical motion',30,712,20,'#93a3ba');
+  rich('Model: constant g, no air resistance'+(lastMarkDt?`; time dots every ${lastMarkDt} s`:''),30,744,20,'#93a3ba');
+  rich(BODIES[S.scene].note,30,776,20,'#ffc36b');
 
   const p=predict(), L=live(), A=S.answers;
   card(680,96,490,256,'Predicted','#ffc36b',A?'':'hidden: work it out first');
@@ -380,13 +582,41 @@ function drawPanel(){
   panelTex.needsUpdate=true;
 }
 
+function commitKeypad(){
+  const K=S.keypad, v=parseFloat(K.text), lim=limitsFor(K.key);
+  if(!K.text){S.keypad=null;return;}
+  if(!Number.isFinite(v)||v<lim[0]||v>lim[1]){K.err=`Enter a number from ${fmtNum(lim[0])} to ${fmtNum(lim[1])}`;return;}
+  S.keypad=null;
+  if(K.key==='g') setG(v); else {S[K.key]=v; onParams();}
+}
 function act(id){
+  audioUnlock(); if(id!=='launch') playClick();
   const m=id.match(/^(u|angle|h)([+-]\d)$/);
-  if(m){const [a,b]=LIMITS[m[1]]; S[m[1]]=clamp(S[m[1]]+Number(m[2]),a,b); onParams();}
+  if(m){
+    const n=Number(m[2]);
+    if(m[1]==='u'){const c=speedCfg(); S.u=Math.round(clamp(S.u+Math.sign(n)*(Math.abs(n)===5?c.s5:c.s1),c.min,c.max)*100)/100;}
+    else{const [a,b]=LIMITS[m[1]]; S[m[1]]=Math.round(clamp(S[m[1]]+n,a,b)*100)/100;}
+    onParams();
+  }
+  else if(id.startsWith('edit:')){S.keypad={key:id.slice(5),text:'',err:''};}
+  else if(id.startsWith('kp:')){
+    const K=S.keypad, k=id.slice(3);
+    if(K){
+      if(k==='cancel') S.keypad=null;
+      else if(k==='ok') commitKeypad();
+      else if(k==='clear'){K.text='';K.err='';}
+      else if(k==='back'){K.text=K.text.slice(0,-1);K.err='';}
+      else if(K.text.length<8&&!(k==='.'&&K.text.includes('.'))){K.text+=k;K.err='';}
+    }
+  }
+  else if(id.startsWith('pick:')){const i=Number(id.slice(5)); if(S.picker==='scene'){S.scene=i;applyScene();} setGravity(i); S.picker=null;}
   else switch(id){
-    case 'grav': S.gi=(S.gi+1)%GRAV.length; onParams(); break;
+    case 'grav': S.picker='grav'; break;
+    case 'pickcancel': S.picker=null; break;
     case 'ts': S.tsi=(S.tsi+1)%TS.length; break;
     case 'vectors': case 'proj': case 'markers': case 'answers': S[id]=!S[id]; break;
+    case 'scene': S.picker='scene'; break;
+    case 'sound': S.sound=!S.sound; setMute(); break;
     case 'launch': launch(); break;
     case 'clear': clearTrails(); onParams(); break;
     case 'view': S.viewIdx=(S.viewIdx+1)%VIEWS.length; applyView(); break;
@@ -407,7 +637,15 @@ cv.addEventListener('pointermove',e=>{if(!drag)return;lookYaw+=(e.clientX-drag.x
 const endDrag=()=>{drag=null;cv.style.cursor='grab';};
 cv.addEventListener('pointerup',endDrag); cv.addEventListener('pointercancel',endDrag);
 cv.addEventListener('wheel',e=>{e.preventDefault();camera.fov=clamp(camera.fov+e.deltaY*0.03,20,90);camera.updateProjectionMatrix();},{passive:false});
-window.addEventListener('keydown',e=>{if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();act('launch');}});
+window.addEventListener('keydown',e=>{
+  if(S.keypad){
+    const map={Enter:'kp:ok',Escape:'kp:cancel',Backspace:'kp:back',Delete:'kp:clear'};
+    let id=map[e.key]; if(!id&&/^[0-9.]$/.test(e.key)) id='kp:'+e.key;
+    if(id){e.preventDefault();act(id);} return;
+  }
+  if(e.key==='Escape'&&S.picker){act('pickcancel');return;}
+  if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();act('launch');}
+});
 
 /* ---------- VR controllers & hands ---------- */
 const ctrls=[];
@@ -453,6 +691,7 @@ async function setupVR(){
   catch(e){ no(framed?'VR blocked here: open the page directly':'VR check failed ('+e.name+')'); }
 }
 vrBtn.addEventListener('click',async()=>{
+  audioUnlock();
   if(session){session.end();return;}
   try{
     session=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
@@ -472,19 +711,22 @@ function resize(){
 new ResizeObserver(resize).observe(view);
 
 const clock=new THREE.Clock(); let frame=0;
-const tmpO=new THREE.Vector3(), tmpV=new THREE.Vector3();
+const tmpO=new THREE.Vector3(), tmpV=new THREE.Vector3(), camPos=new THREE.Vector3();
 renderer.setAnimationLoop(()=>{
   const dt=Math.min(clock.getDelta(),0.05); frame++;
   if(flight&&!flight.done){stepFlight(dt); if(frame%4===0) drawPanel();}
   const L=live();
   ball.position.set(L.x,L.y,0);
+  if(flight&&!flight.done&&whoosh.isPlaying) updateWhoosh(L);
   groundDot.position.set(L.x,0.05,0); poleDot.position.set(POLE_X,L.y,0);
   groundDot.visible=poleDot.visible=S.proj;
+  camera.getWorldPosition(camPos);
+  for(const o of [ball,poleDot,groundDot]) o.scale.setScalar(clamp(camPos.distanceTo(o.position)*0.03,0.3,60));
   landRing.visible=S.answers;
   const showVec=S.vectors&&!(flight&&flight.done);
   arrVx.visible=arrVy.visible=arrV.visible=showVec;
   if(showVec){
-    const r=0.05*vis,k=0.2*vis; tmpO.set(L.x,L.y,0);
+    const r=0.06*ball.scale.x,k=arrowK; tmpO.set(L.x,L.y,0);
     setArrow(arrVx,tmpO,tmpV.set(L.vx*k,0,0),r);
     setArrow(arrVy,tmpO,tmpV.set(0,L.vy*k,0),r);
     setArrow(arrV,tmpO,tmpV.set(L.vx*k,L.vy*k,0),r*0.9);
@@ -493,7 +735,7 @@ renderer.setAnimationLoop(()=>{
   renderer.render(scene,camera);
 });
 
-onParams(); applyView(); applyToggles(); resize(); drawPanel(); setupVR();
+applyScene(); onParams(); applyView(); applyToggles(); resize(); drawPanel(); setupVR(); setMute();
 if(document.fonts) document.fonts.ready.then(drawPanel);
 </script>
 </body>

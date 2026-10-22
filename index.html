@@ -40,6 +40,13 @@ h1{margin:0;font-size:1.2rem;font-weight:600;letter-spacing:.01em}
 #vrBtn{font:inherit;font-weight:600;font-size:1rem;padding:10px 20px;border-radius:999px;border:0;
   background:var(--accent);color:var(--accent-text);cursor:pointer}
 #vrBtn:disabled{background:var(--border);color:var(--muted);cursor:default}
+#quitScreen{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg)}
+#quitScreen[hidden]{display:none}
+.qbox{max-width:440px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px}
+.qbox h2{margin:0 0 8px;font-size:1.4rem}
+.qbox p{color:var(--muted);line-height:1.45;margin:0 0 20px}
+#restartBtn{font:inherit;font-weight:600;font-size:1rem;padding:10px 20px;border-radius:999px;border:0;background:var(--accent);color:var(--accent-text);cursor:pointer}
+#restartBtn:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 #vrBtn:focus-visible,#panel:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 main{flex:1;display:flex;min-height:0}
 #view{flex:1;position:relative;min-width:0;min-height:0;background:#9cc9ee}
@@ -73,10 +80,18 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>Typing exact values:</strong> tap any yellow number on the console (launch speed, angle, height or g) to open a number pad. On a computer you can also type the number on your keyboard and press Enter.</p>
       <p class="hint"><strong>Worlds:</strong> press the World button on the console to choose from all eight planets, the Moon, Phobos, Titan and Pluto. Each world sets its own gravity, using NASA values (for the gas giants, g is measured at the 1-bar cloud level because they have no solid surface). The Gravity button lets you pick a different world’s gravity without changing the scenery.</p>
       <p class="hint"><strong>Sound:</strong> the cannon booms, the ball whooshes louder and higher as it speeds up, a tick marks each time dot, and there’s a thud on landing. In VR the sounds come from where they happen, so you hear the ball travel. Use the Sound button on the console to mute the effects. Calm background music plays too; the Music button turns it on or off separately.</p>
+      <p class="hint"><strong>Pause and read the values:</strong> press Pause on the console (or P on a computer) to freeze the projectile mid-flight. While it is paused, a label beside the ball shows the time in flight, its height, the horizontal and vertical velocity, and the resultant velocity with its direction. Press Resume to carry on.</p>
       <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
   </main>
+</div>
+<div id="quitScreen" hidden>
+  <div class="qbox">
+    <h2>Simulation closed</h2>
+    <p>VR, sound and music have all been stopped. You can now close this tab.</p>
+    <button id="restartBtn">Restart simulation</button>
+  </div>
 </div>
 
 <script type="module">
@@ -342,6 +357,34 @@ function setArrow(a,origin,vec,r){
 }
 const arrVx=makeArrow(COL.vx), arrVy=makeArrow(COL.vy), arrV=makeArrow(COL.v);
 
+// floating data tag beside the projectile (time, height, velocity components and resultant)
+const TAG_W=640, TAG_H=380;
+const tagCanvas=document.createElement('canvas'); tagCanvas.width=TAG_W; tagCanvas.height=TAG_H;
+const tagCtx=tagCanvas.getContext('2d');
+const tagTex=new THREE.CanvasTexture(tagCanvas); tagTex.colorSpace=THREE.SRGBColorSpace;
+const tag=new THREE.Sprite(new THREE.SpriteMaterial({map:tagTex,depthTest:false,depthWrite:false,transparent:true}));
+tag.center.set(1.06,0.5); tag.renderOrder=999; tag.visible=false; scene.add(tag);
+let tagStatus='';
+function drawTag(L,status){
+  const g=tagCtx, F='"Barlow", system-ui, sans-serif', n=v=>(Math.abs(v)<0.005?0:v).toFixed(2);
+  g.clearRect(0,0,TAG_W,TAG_H);
+  g.beginPath(); const r=24,x0=4,y0=4,w=TAG_W-8,h=TAG_H-8;
+  g.moveTo(x0+r,y0); g.arcTo(x0+w,y0,x0+w,y0+h,r); g.arcTo(x0+w,y0+h,x0,y0+h,r); g.arcTo(x0,y0+h,x0,y0,r); g.arcTo(x0,y0,x0+w,y0,r); g.closePath();
+  g.fillStyle='rgba(10,16,28,0.88)'; g.fill();
+  g.lineWidth=4; g.strokeStyle=status==='Paused'?'#ffc36b':'rgba(255,255,255,0.35)'; g.stroke();
+  g.textBaseline='alphabetic'; g.textAlign='left';
+  const line=(y,parts,color,size=36)=>{let x=28; for(const [t,sub] of parts){g.font=`600 ${sub?Math.round(size*0.66):size}px ${F}`; g.fillStyle=color; g.fillText(t,x,sub?y+10:y); x+=g.measureText(t).width;}};
+  line(52,[[status==='Paused'?'⏸ Paused':status]],status==='Paused'?'#ffc36b':'#93a3ba',30);
+  line(106,[['Time  t = '+n(L.t)+' s']],'#ffffff');
+  line(160,[['Height  y = '+n(L.y)+' m']],'#ffffff');
+  line(214,[['v'],['x',1],[' = '+n(L.vx)+' m/s   horizontal']],'#ff5c9d');
+  line(268,[['v'],['y',1],[' = '+n(L.vy)+' m/s '+(L.vy>0.005?'↑':L.vy<-0.005?'↓':'')+'  vertical']],'#7fb3ff');
+  const sp=Math.hypot(L.vx,L.vy), ang=Math.atan2(L.vy,L.vx)*180/Math.PI;
+  line(326,[['v = '+n(sp)+' m/s']],'#ffffff');
+  line(362,[['at '+Math.abs(ang).toFixed(1)+'° '+(Math.abs(ang)<0.05?'(horizontal)':ang>0?'above horizontal':'below horizontal')]],'#c9d4e3',28);
+  tagTex.needsUpdate=true;
+}
+
 /* ---------- sound (generated with Web Audio, no sound files) ---------- */
 const listener=new THREE.AudioListener(); camera.add(listener);
 const actx=listener.context;
@@ -456,6 +499,7 @@ function applyToggles(){for(const tr of trails){tr.dots.visible=S.markers;tr.pro
 const trailInfo=(f,end)=>`${f.angle}°, ${f.u} m/s, h ${f.h} m, ${f.gname}: ${end}`;
 
 function launch(){
+  S.paused=false;
   const p=predict();
   if(flight&&!flight.done) flight.tr.info=trailInfo(flight,'stopped');
   while(trails.length>=MAX_TRAILS) removeTrail(trails.shift());
@@ -476,7 +520,7 @@ function stepFlight(dt){
   if(f.done||Math.hypot(q.x-f.lx,q.y-f.ly)>=f.minStep){addPoint(f.tr,q.x,q.y);f.lx=q.x;f.ly=q.y;}
   if(f.done){f.tr.info=trailInfo(f,`range ${f.R.toFixed(1)} m`);stopWhoosh();landSpot.position.set(f.R,0.2,0);replay(thudSnd);drawPanel();}
 }
-function clearTrails(){trails.forEach(removeTrail);trails=[];flight=null;colorIdx=0;stopWhoosh();}
+function clearTrails(){trails.forEach(removeTrail);trails=[];flight=null;colorIdx=0;stopWhoosh();S.paused=false;}
 function live(){
   const p=predict();
   if(flight){const t=flight.t,q=posAt(flight,t);return {t,x:q.x,y:q.y,vx:flight.ux,vy:flight.uy-flight.g*t};}
@@ -541,7 +585,7 @@ function rich(t,x,y,size,color,weight){
 function right(t,x,y,size,color,weight){font(size,weight);ctx.fillStyle=color;ctx.textAlign='right';ctx.fillText(t,x,y);ctx.textAlign='left';}
 function button(id,x,y,w,h,label,kind='normal',size=26){
   buttons.push({id,x,y,w,h});
-  const pal={normal:['#24324a','#33456a'],on:['#16775a','#1e936f'],off:['#24324a','#33456a'],primary:['#f2b81f','#ffcb45'],value:['#070c15','#1a2840']}[kind];
+  const pal={normal:['#24324a','#33456a'],on:['#16775a','#1e936f'],off:['#24324a','#33456a'],primary:['#f2b81f','#ffcb45'],value:['#070c15','#1a2840'],danger:['#8a1f2b','#a8283a']}[kind];
   rrect(x,y,w,h,12); ctx.fillStyle=pal[isHover(id)?1:0]; ctx.fill();
   if(kind==='value'){ctx.lineWidth=2;ctx.strokeStyle='#4a5c7c';ctx.stroke();}
   if(isHover(id)){ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,0.75)';ctx.stroke();}
@@ -562,7 +606,14 @@ function drawPanel(){
   buttons=[]; ctx.clearRect(0,0,PW,PH);
   rrect(0,0,PW,PH,30); ctx.fillStyle='#0f1828'; ctx.fill();
   rich('Projectile Motion Lab',30,60,38,'#ffffff','600');
-  rich('HSC Physics, Module 5',440,58,22,'#93a3ba');
+  button('quit',440,18,140,52,'✕ Quit','danger',22);
+  if(S.confirmQuit){
+    font(36,'600'); ctx.fillStyle='#ffffff'; ctx.textAlign='left'; ctx.fillText('Quit the simulation?',30,190);
+    rich('This exits VR and stops all sound and music.',30,245,26,'#c9d4e3');
+    button('quityes',30,300,300,110,'Quit','danger',34);
+    button('quitno',350,300,300,110,'Keep going','normal',30);
+    panelTex.needsUpdate=true; return;
+  }
   ctx.fillStyle='#22304a'; ctx.fillRect(30,80,PW-60,2);
   if(S.keypad){
     const K=S.keypad, lim=limitsFor(K.key), U=UNITS[K.key], cur=K.key==='g'?S.g:S[K.key];
@@ -605,9 +656,11 @@ function drawPanel(){
   rich('Playback',30,416,25,'#c9d4e3'); button('ts',250,380,406,54,TS_LABEL[S.tsi]+'  ↻','normal',24);
   [['vectors','Vectors'],['proj','Projections'],['markers','Time dots'],['answers','Answers']]
     .forEach(([k,l],i)=>button(k,30+i*157,456,149,56,(S[k]?'✓ ':'')+l,S[k]?'on':'off',22));
-  button('launch',30,530,300,96,'Launch','primary',40);
-  button('clear',342,530,150,96,'Clear\ntrails','normal',23);
-  button('view',504,530,152,96,'View\n'+VIEWS[S.viewIdx],'normal',23);
+  button('launch',30,530,200,96,'Launch','primary',36);
+  const canPause=flight&&!flight.done;
+  button('pause',240,530,140,96,S.paused&&canPause?'▶ Resume':'⏸ Pause',S.paused&&canPause?'on':'normal',23);
+  button('clear',390,530,130,96,'Clear\ntrails','normal',23);
+  button('view',530,530,126,96,'View\n'+VIEWS[S.viewIdx],'normal',22);
 
   font(22,'600'); ctx.fillStyle='#c9d4e3'; ctx.fillText('Arrows',30,672);
   let lx=118;
@@ -624,7 +677,7 @@ function drawPanel(){
   card(680,96,490,256,'Predicted','#ffc36b',A?'':'hidden: work it out first');
   [['u_x = u cos θ',f2(p.ux)+' m/s'],['u_y = u sin θ',f2(p.uy)+' m/s'],['Time of flight',f2(p.T)+' s'],['Max height',f2(p.H)+' m'],['Range',f2(p.R)+' m']]
     .forEach(([l,v],i)=>{const y=176+i*36; rich(l,702,y,24,'#dfe6f0'); right(A?v:'?',1150,y,24,A?'#ffffff':'#5c6b82','600');});
-  const status=flight?(flight.done?'landed':'in flight'):'at launch';
+  const status=flight?(flight.done?'landed':S.paused?'paused':'in flight'):'at launch';
   card(680,368,490,232,'Live','#7fd1ff',status);
   [['t',f2(L.t)+' s'],['x (horizontal)',f2(L.x)+' m'],['y (height)',f2(L.y)+' m'],['v_x',f2(L.vx)+' m/s'],['v_y',f2(L.vy)+' m/s']]
     .forEach(([l,v],i)=>{const y=444+i*34; rich(l,702,y,24,'#dfe6f0'); right(v,1150,y,24,'#ffffff','600');});
@@ -665,10 +718,14 @@ function act(id){
   else if(id.startsWith('pick:')){const i=Number(id.slice(5)); if(S.picker==='scene'){S.scene=i;applyScene();} setGravity(i); S.picker=null;}
   else switch(id){
     case 'grav': S.picker='grav'; break;
+    case 'pause': if(flight&&!flight.done){S.paused=!S.paused; if(S.paused) stopWhoosh(); else startWhoosh();} break;
     case 'pickcancel': S.picker=null; break;
     case 'ts': S.tsi=(S.tsi+1)%TS.length; break;
     case 'vectors': case 'proj': case 'markers': case 'answers': S[id]=!S[id]; break;
     case 'scene': S.picker='scene'; break;
+    case 'quit': S.confirmQuit=true; S.picker=null; S.keypad=null; break;
+    case 'quitno': S.confirmQuit=false; break;
+    case 'quityes': quit(); return;
     case 'music': S.music=!S.music; startMusic(); break;
     case 'sound': S.sound=!S.sound; setMute(); break;
     case 'launch': launch(); break;
@@ -697,7 +754,9 @@ window.addEventListener('keydown',e=>{
     let id=map[e.key]; if(!id&&/^[0-9.]$/.test(e.key)) id='kp:'+e.key;
     if(id){e.preventDefault();act(id);} return;
   }
+  if(e.key==='Escape'&&S.confirmQuit){act('quitno');return;}
   if(e.key==='Escape'&&S.picker){act('pickcancel');return;}
+  if((e.key==='p'||e.key==='P')&&!S.picker&&!S.confirmQuit){act('pause');return;}
   if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();act('launch');}
 });
 
@@ -766,9 +825,9 @@ new ResizeObserver(resize).observe(view);
 
 const clock=new THREE.Clock(); let frame=0;
 const tmpO=new THREE.Vector3(), tmpV=new THREE.Vector3(), camPos=new THREE.Vector3();
-renderer.setAnimationLoop(()=>{
+function loop(){
   const dt=Math.min(clock.getDelta(),0.05); frame++;
-  if(flight&&!flight.done){stepFlight(dt); if(frame%4===0) drawPanel();}
+  if(flight&&!flight.done&&!S.paused){stepFlight(dt); if(frame%4===0) drawPanel();}
   const L=live();
   ball.position.set(L.x,L.y,0);
   if(flight&&!flight.done&&whoosh.isPlaying) updateWhoosh(L);
@@ -789,8 +848,48 @@ renderer.setAnimationLoop(()=>{
     setArrow(arrVy,tmpO,tmpV.set(0,L.vy*k,0),r);
     setArrow(arrV,tmpO,tmpV.set(L.vx*k,L.vy*k,0),r*0.9);
   }
+  const showTag=!!(flight&&!flight.done&&S.paused);
+  tag.visible=showTag;
+  if(showTag){
+    if(tagStatus!=='Paused'){drawTag(L,'Paused');tagStatus='Paused';}
+    tag.position.set(L.x,L.y,0);
+    const th=Math.max(camPos.distanceTo(tag.position)*0.1,0.2);
+    tag.scale.set(th*TAG_W/TAG_H,th,1);
+  }else tagStatus='';
   if(renderer.xr.isPresenting) updateControllers();
   renderer.render(scene,camera);
+}
+renderer.setAnimationLoop(loop);
+
+/* ---------- shutting down: quit button, closing the tab, leaving the page ---------- */
+let quitted=false;
+function pauseAll(){
+  stopWhoosh();
+  if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+  if(actx.state!=='closed') actx.suspend().catch(()=>{});
+}
+function resumeAll(){if(!quitted) actx.resume().then(startMusic).catch(()=>{});}
+async function shutdown(){
+  pauseAll();
+  if(session){try{await session.end();}catch(e){}}
+  renderer.setAnimationLoop(null);
+}
+async function quit(){
+  quitted=true; S.confirmQuit=false;
+  await shutdown();
+  document.getElementById('quitScreen').hidden=false;
+  try{window.close();}catch(e){}
+}
+document.getElementById('restartBtn').addEventListener('click',()=>location.reload());
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){pauseAll(); if(session) session.end().catch(()=>{});}
+  else resumeAll();
+});
+window.addEventListener('pagehide',()=>{shutdown();});
+window.addEventListener('pageshow',e=>{if(e.persisted&&!quitted){renderer.setAnimationLoop(loop);resumeAll();}});
+renderer.xr.addEventListener('sessionstart',()=>{
+  const s=renderer.xr.getSession();
+  s.addEventListener('visibilitychange',()=>{if(s.visibilityState==='hidden') pauseAll(); else resumeAll();});
 });
 
 applyScene(); onParams(); applyView(); applyToggles(); resize(); drawPanel(); setupVR(); setMute();

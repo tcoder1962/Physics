@@ -504,18 +504,21 @@ function launch(){
   if(flight&&!flight.done) flight.tr.info=trailInfo(flight,'stopped');
   while(trails.length>=MAX_TRAILS) removeTrail(trails.shift());
   const tr=newTrail(TRAIL_COLORS[colorIdx++%TRAIL_COLORS.length]); trails.push(tr);
-  const markDt=niceStep(p.T/16);
-  flight={...p,u:S.u,angle:S.angle,h:S.h,gname:gName()==='Custom'?'g = '+fmtNum(S.g):gName(),t:0,tr,markDt,nextMark:markDt,vis,done:false,lx:0,ly:S.h,minStep:Math.max(p.R,p.H,1)/4000};
+  // time dots: 8 equal intervals from launch to the top of the path, so the dots are symmetric about the apex
+  const tUp=Math.max(p.uy,0)/p.g;
+  const markDt=tUp>1e-6?tUp/8:Math.max(p.T/16,1e-3);
+  flight={...p,u:S.u,angle:S.angle,h:S.h,gname:gName()==='Custom'?'g = '+fmtNum(S.g):gName(),t:0,tr,markDt,mi:0,vis,done:false,lx:0,ly:S.h,minStep:Math.max(p.R,p.H,1)/4000};
   tr.info=trailInfo(flight,'in flight…');
   addPoint(tr,0,S.h);
   replay(boomSnd); if(p.T>0) startWhoosh();
   if(p.T<=0){flight.done=true; tr.info=trailInfo(flight,'range 0.0 m');}
-  lastMarkDt=markDt; applyToggles(); applyView(); drawPanel();
+  lastMarkDt=Number(markDt.toPrecision(3)); applyToggles(); applyView(); drawPanel();
 }
 function stepFlight(dt){
   const f=flight; f.t+=dt*TS[S.tsi];
   if(f.t>=f.T){f.t=f.T;f.done=true;}
-  while(f.nextMark<f.T-1e-9&&f.nextMark<=f.t){addMarker(f,f.nextMark);f.nextMark+=f.markDt;playTick();}
+  const eps=1e-6*Math.max(f.T,1);
+  while(f.mi*f.markDt<=f.T+eps&&f.mi*f.markDt<=f.t+eps){addMarker(f,Math.min(f.mi*f.markDt,f.T));f.mi++;playTick();}
   const q=posAt(f,f.t);
   if(f.done||Math.hypot(q.x-f.lx,q.y-f.ly)>=f.minStep){addPoint(f.tr,q.x,q.y);f.lx=q.x;f.ly=q.y;}
   if(f.done){f.tr.info=trailInfo(f,`range ${f.R.toFixed(1)} m`);stopWhoosh();landSpot.position.set(f.R,0.2,0);replay(thudSnd);drawPanel();}

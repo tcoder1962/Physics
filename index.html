@@ -78,7 +78,7 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>On Quest 3:</strong> open this page in the Meta Quest Browser and tap <em>Enter VR</em>. The console floats in front of you; point a controller (or pinch with your hand) at a button to press it. If the button says VR isn’t available, open the page in its own browser tab rather than inside another page.</p>
       <p class="hint"><strong>On a computer:</strong> drag the scene to look around, scroll to zoom, click the console, and press Space to launch.</p>
       <p class="hint"><strong>Typing exact values:</strong> tap any yellow number on the console (launch speed, angle, height or g) to open a number pad. On a computer you can also type the number on your keyboard and press Enter.</p>
-      <p class="hint"><strong>Worlds:</strong> press the World button on the console to choose from all eight planets, the Moon, Phobos, Titan and Pluto. Each world sets its own gravity, using NASA values (for the gas giants, g is measured at the 1-bar cloud level because they have no solid surface). The Gravity button lets you pick a different world’s gravity without changing the scenery.</p>
+      <p class="hint"><strong>Worlds:</strong> press the Preset button next to the value of g to choose from all eight planets, the Moon, Phobos, Titan and Pluto. Choosing a world changes the scenery and sets g to that world’s value, using NASA figures (for the gas giants, g is measured at the 1-bar cloud level because they have no solid surface). To try a different g in the same scenery, tap the yellow g value and type it in.</p>
       <p class="hint"><strong>Sound:</strong> the cannon booms, the ball whooshes louder and higher as it speeds up, a tick marks each time dot, and there’s a thud on landing. In VR the sounds come from where they happen, so you hear the ball travel. Use the Sound button on the console to mute the effects. Calm background music plays too; the Music button turns it on or off separately.</p>
       <p class="hint"><strong>Pause and read the values:</strong> press Pause on the console (or P on a computer) to freeze the projectile mid-flight. While it is paused, a label beside the ball shows the time in flight, its height, the horizontal and vertical velocity, and the resultant velocity with its direction. Press Resume to carry on.</p>
       <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
@@ -640,7 +640,6 @@ function drawPanel(){
     button('pickcancel',940,665,230,100,'Cancel','normal',28);
     panelTex.needsUpdate=true; return;
   }
-  button('scene',660,18,180,52,'World: '+BODIES[S.scene].name+' ▾','normal',22);
   button('music',850,18,150,52,S.music?'♪ Music on':'♪ Music off',S.music?'on':'off',21);
   button('sound',1010,18,160,52,S.sound?'🔊 Sound on':'🔇 Sound off',S.sound?'on':'off',21);
 
@@ -720,7 +719,7 @@ function act(id){
   }
   else if(id.startsWith('pick:')){const i=Number(id.slice(5)); if(S.picker==='scene'){S.scene=i;applyScene();} setGravity(i); S.picker=null;}
   else switch(id){
-    case 'grav': S.picker='grav'; break;
+    case 'grav': S.picker='scene'; break;
     case 'pause': if(flight&&!flight.done){S.paused=!S.paused; if(S.paused) stopWhoosh(); else startWhoosh();} break;
     case 'pickcancel': S.picker=null; break;
     case 'ts': S.tsi=(S.tsi+1)%TS.length; break;

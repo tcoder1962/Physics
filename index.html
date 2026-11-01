@@ -85,6 +85,7 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>School lab:</strong> choose School lab from the Preset button to launch a small ball from a lab bench in a classroom, with everything scaled down: launch speeds of 0.5 to 10 m/s, bench heights up to 2 m, and a measuring tape on the floor marked every 10 cm. It is ideal for comparing with a real lab launcher.</p>
       <p class="hint"><strong>Curved ramp (School lab only):</strong> press Launcher on the console to switch from the spring launcher to a curved track. Set the release height Δh (how far the ball drops along the track), the ball’s mass and the bench height, then press Launch: the ball rolls down the track and leaves the end of the bench horizontally. Choose Ball slides (u = √(2gΔh), no friction) or Ball rolls (u = √(10gΔh/7), allowing for the energy in the ball’s spin). Changing the mass makes no difference to the motion, because it cancels out of mgΔh = ½mu².</p>
       <p class="hint"><strong>Bench view (School lab only):</strong> press View until it says Bench to watch side-on with your eyes exactly level with the launch point. A thin red line marks the launch height, so you can see the path rise above it and fall back through it.</p>
+      <p class="hint"><strong>Moving the console in VR:</strong> press the Console button at the top of the console to move it Front, Low, Left or Right, or hold the grip button on either controller to pick the console up and put it anywhere. It stays where you leave it as you change views.</p>
       <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
@@ -138,7 +139,7 @@ const TRAIL_COLORS=[0xd00000,0x6a00f4,0x00704f,0xd18f00];
 const MAX_TRAILS=4;
 const COL={vx:0xff006e,vy:0x0a3d91,v:0x111111,ball:0xff8c00};
 const hex=c=>'#'+c.toString(16).padStart(6,'0');
-let POLE_X=-4;
+let POLE_X=-4, POLE_Z=0;
 
 function predict(){
   const g=S.g, ramp=isLab()&&S.ramp;
@@ -335,7 +336,7 @@ function applyScene(){
   sun.color.set(b.sun[0]); sun.intensity=b.sun[1];
   grid.material.opacity=b.grid;
   const lab=!!b.lab;
-  distMarks.visible=!lab; grid.visible=!lab; lane.scale.y=lab?0.12:1; POLE_X=lab?-1.4:-4;
+  distMarks.visible=!lab; grid.visible=!lab; lane.scale.y=lab?0.12:1; POLE_X=lab?0.15:-4; POLE_Z=lab?-0.5:0;
   tower.material.color.set(lab?0x8a6a48:0x9a8c7a); cannon.scale.setScalar(lab?0.4:1);
   for(const k in decoCache) decoCache[k].visible=false;
   if(!decoCache[b.name]){const g=new THREE.Group(); BUILD[b.name](g); scene.add(g); decoCache[b.name]=g;}
@@ -383,11 +384,11 @@ function rebuildPole(H){
   const lab=isLab();
   const top=lab?Math.max(1,Math.ceil((H+0.2)/0.25)*0.25):Math.max(10,Math.ceil((H+2)/5)*5);
   const k=lab?0.15:clamp(top/40,1,60);
-  pole.scale.set(k,top,k); pole.position.set(POLE_X,top/2,0);
+  pole.scale.set(k,top,k); pole.position.set(POLE_X,top/2,POLE_Z);
   poleLabels.children.slice().forEach(s=>{poleLabels.remove(s);s.material.map.dispose();s.material.dispose();});
   const step=lab?0.25:top<=40?5:top<=150?20:top<=400?50:100;
   const ls=lab?0.06:0.6*k, off=lab?0.13:0.9*k;
-  for(let y=step;y<=top+1e-9;y+=step){const l=makeLabel((lab?y.toFixed(2):y)+' m',ls); l.position.set(POLE_X-off,y,0); poleLabels.add(l);}
+  for(let y=step;y<=top+1e-9;y+=step){const l=makeLabel((lab?y.toFixed(2):y)+' m',ls); l.position.set(lab?POLE_X+off:POLE_X-off,y,POLE_Z); poleLabels.add(l);}
 }
 
 // tower & cannon
@@ -563,7 +564,7 @@ function addMarker(f,t){
   const p=posAt(f,t), s=f.vis;
   const d=new THREE.Mesh(dotGeo,f.tr.mat); d.position.set(p.x,p.y,0); d.scale.setScalar(s); f.tr.dots.add(d);
   const gd=new THREE.Mesh(gDotGeo,f.tr.projMat); gd.position.set(p.x,0.045,0); gd.scale.setScalar(s); f.tr.proj.add(gd);
-  const pd=new THREE.Mesh(dotGeo,f.tr.mat); pd.position.set(POLE_X,p.y,0); pd.scale.setScalar(s); f.tr.proj.add(pd);
+  const pd=new THREE.Mesh(dotGeo,f.tr.mat); pd.position.set(POLE_X,p.y,POLE_Z); pd.scale.setScalar(s); f.tr.proj.add(pd);
 }
 function applyToggles(){for(const tr of trails){tr.dots.visible=S.markers;tr.proj.visible=S.markers&&S.proj;}}
 const trailInfo=(f,end)=>f.ramp?`Ramp Δh ${fmtNum(f.ramp.dh)} m, ${fmtNum(f.ramp.m)} kg, ${f.ramp.roll?'rolls':'slides'}, h ${f.h} m: ${end}`:`${f.angle}°, ${f.u} m/s, h ${f.h} m, ${f.gname}: ${end}`;
@@ -686,7 +687,16 @@ const ctx=pc.getContext('2d');
 const FONT='"Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 const panelTex=new THREE.CanvasTexture(pc); panelTex.colorSpace=THREE.SRGBColorSpace; panelTex.anisotropy=8;
 const panelMesh=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.6),new THREE.MeshBasicMaterial({map:panelTex,transparent:true}));
-panelMesh.position.set(0,1.05,-0.62); panelMesh.rotation.x=-0.5; panelMesh.visible=false; dolly.add(panelMesh);
+panelMesh.rotation.order='YXZ'; panelMesh.visible=false; dolly.add(panelMesh);
+// console positions in VR (relative to you); grip button drags it anywhere
+const PANEL_POS=[{name:'Front',p:[0,1.05,-0.62],r:[-0.5,0]},{name:'Low',p:[0,0.72,-0.5],r:[-1.0,0]},{name:'Left',p:[-0.62,1.0,-0.38],r:[-0.4,0.95]},{name:'Right',p:[0.62,1.0,-0.38],r:[-0.4,-0.95]}];
+let panelIdx=0, panelCustom=false, grabbedBy=null;
+function placePanel(){
+  if(grabbedBy){grabbedBy=null;}
+  if(panelMesh.parent!==dolly) dolly.add(panelMesh);
+  const P=PANEL_POS[panelIdx]; panelMesh.position.set(...P.p); panelMesh.rotation.set(P.r[0],P.r[1],0); panelCustom=false;
+}
+placePanel();
 
 let buttons=[];
 const hoverMap={mouse:null,c0:null,c1:null};
@@ -724,7 +734,8 @@ function hitTest(x,y){const b=buttons.find(b=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y
 function drawPanel(){
   buttons=[]; ctx.clearRect(0,0,PW,PH);
   rrect(0,0,PW,PH,30); ctx.fillStyle='#0f1828'; ctx.fill();
-  rich('Projectile Motion Lab',30,60,38,'#ffffff','600');
+  rich('Projectile Lab',30,60,36,'#ffffff','600');
+  if(renderer.xr.isPresenting) button('panelpos',272,18,158,52,'Console: '+(panelCustom?'Moved':PANEL_POS[panelIdx].name),'normal',18);
   button('quit',440,18,140,52,'✕ Quit','danger',22);
   if(S.confirmQuit){
     font(36,'600'); ctx.fillStyle='#ffffff'; ctx.textAlign='left'; ctx.fillText('Quit the simulation?',30,190);
@@ -930,6 +941,7 @@ function act(id){
     case 'quit': S.confirmQuit=true; S.picker=null; S.keypad=null; break;
     case 'quitno': S.confirmQuit=false; break;
     case 'quityes': quit(); return;
+    case 'panelpos': panelIdx=panelCustom?panelIdx:(panelIdx+1)%PANEL_POS.length; placePanel(); break;
     case 'music': S.music=!S.music; startMusic(); break;
     case 'sound': S.sound=!S.sound; setMute(); break;
     case 'launch': launch(); break;
@@ -982,6 +994,9 @@ for(let i=0;i<2;i++){
   c.addEventListener('connected',e=>{c.userData.src=e.data;});
   c.addEventListener('disconnected',()=>{c.userData.src=null;});
   c.addEventListener('selectstart',()=>{const id=c.userData.hoverId; if(id){act(id);pulse(c);}});
+  // hold the grip button to pick up the console and move it; let go to leave it there
+  c.addEventListener('squeezestart',()=>{if(grabbedBy) return; grabbedBy=c; c.attach(panelMesh); pulse(c);});
+  c.addEventListener('squeezeend',()=>{if(grabbedBy!==c) return; grabbedBy=null; dolly.attach(panelMesh); panelCustom=true; drawPanel();});
   dolly.add(c); ctrls.push(c);
 }
 const ray=new THREE.Raycaster(), rotM=new THREE.Matrix4();
@@ -1020,7 +1035,7 @@ vrBtn.addEventListener('click',async()=>{
     await renderer.xr.setSession(session); vrBtn.textContent='Exit VR';
   }catch(e){session=null;vrBtn.textContent='VR failed to start ('+(e.name||'error')+')';console.error(e);}
 });
-renderer.xr.addEventListener('sessionstart',()=>{panelMesh.visible=true;benchFixFrames=10;});
+renderer.xr.addEventListener('sessionstart',()=>{panelMesh.visible=true;benchFixFrames=10;drawPanel();});
 renderer.xr.addEventListener('sessionend',()=>{panelMesh.visible=false;hoverMap.c0=hoverMap.c1=null;resize();updateDesktopCam();drawPanel();});
 
 /* ---------- loop ---------- */
@@ -1045,7 +1060,7 @@ function loop(){
     followTarget.set(L.x,Math.max(0,L.y-1.4),followDist());
     dolly.position.lerp(followTarget,1-Math.exp(-dt*6));
   }
-  groundDot.position.set(L.x,0.05,0); poleDot.position.set(POLE_X,L.y,0);
+  groundDot.position.set(L.x,0.05,0); poleDot.position.set(POLE_X,L.y,POLE_Z);
   groundDot.visible=poleDot.visible=S.proj;
   camera.getWorldPosition(camPos);
   const minS=isLab()?0.08:0.3;

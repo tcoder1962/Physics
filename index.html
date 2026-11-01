@@ -82,6 +82,9 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>Sound:</strong> the cannon booms, the ball whooshes louder and higher as it speeds up, a tick marks each time dot, and there’s a thud on landing. In VR the sounds come from where they happen, so you hear the ball travel. Use the Sound button on the console to mute the effects. Calm background music plays too; the Music button turns it on or off separately.</p>
       <p class="hint"><strong>Pause and read the values:</strong> press Pause on the console (or P on a computer) to freeze the projectile mid-flight. While it is paused, a label beside the ball shows the time in flight, its height, the horizontal and vertical velocity, and the resultant velocity with its direction. Press Resume to carry on.</p>
       <p class="hint"><strong>Inspect a point on the path:</strong> after the ball lands, press Inspect. Tap anywhere on the time bar, or use the Start, Dot, Fine, Top and End buttons, to move the ball back to any point on the path. Zoom in and out to see that point up close or the whole path, and read the time, position, height, horizontal and vertical velocity, and resultant velocity on the console and on the label beside the ball. On a computer, use the arrow keys (Shift for whole dots) and + / − to zoom. Press Done to return.</p>
+      <p class="hint"><strong>School lab:</strong> choose School lab from the Preset button to launch a small ball from a lab bench in a classroom, with everything scaled down: launch speeds of 0.5 to 10 m/s, bench heights up to 2 m, and a measuring tape on the floor marked every 10 cm. It is ideal for comparing with a real lab launcher.</p>
+      <p class="hint"><strong>Curved ramp (School lab only):</strong> press Launcher on the console to switch from the spring launcher to a curved track. Set the release height Δh (how far the ball drops along the track), the ball’s mass and the bench height, then press Launch: the ball rolls down the track and leaves the end of the bench horizontally. Choose Ball slides (u = √(2gΔh), no friction) or Ball rolls (u = √(10gΔh/7), allowing for the energy in the ball’s spin). Changing the mass makes no difference to the motion, because it cancels out of mgΔh = ½mu².</p>
+      <p class="hint"><strong>Bench view (School lab only):</strong> press View until it says Bench to watch side-on with your eyes exactly level with the launch point. A thin red line marks the launch height, so you can see the path rise above it and fall back through it.</p>
       <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
@@ -100,7 +103,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 /* ---------- state & physics ---------- */
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
-const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,sound:true,music:true,scene:2,picker:null,g:9.8,keypad:null};
+const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,sound:true,music:true,scene:2,ramp:false,dh:0.3,m:0.05,roll:false,picker:null,g:9.8,keypad:null};
 // g values: NASA planetary fact sheets (equatorial, incl. rotation; gas giants at the 1-bar level); Titan 1.35, Phobos 0.0057 (mean), Pluto 0.62
 const BODIES=[
   {name:'Mercury',g:3.7,sky:0x020306,fog:[3500,5000],ground:0x8a8178,hemi:[0x8899aa,0x222222,0.5],sun:[0xffffff,3.6],grid:0.14,note:'Mercury: no atmosphere, so this model is very accurate.'},
@@ -114,37 +117,65 @@ const BODIES=[
   {name:'Titan',g:1.35,sky:0xc27a2c,fog:[90,1000],ground:0x5e4a32,hemi:[0xffc27a,0x2a1e10,1.4],sun:[0xffb060,0.6],grid:0.16,note:'Titan: thick hazy atmosphere; real drag would be large.'},
   {name:'Uranus',g:8.7,sky:0x9fd6dc,fog:[150,1400],ground:0x86c9d0,hemi:[0xeaffff,0x3a6a70,1.8],sun:[0xffffff,0.7],grid:0.18,note:'Uranus: no solid surface; g is at the 1-bar cloud level.'},
   {name:'Neptune',g:11.0,sky:0x3f66c4,fog:[150,1400],ground:0x3459b0,hemi:[0xdfe8ff,0x1a2a5a,1.8],sun:[0xffffff,0.6],grid:0.18,note:'Neptune: no solid surface; g is at the 1-bar cloud level.'},
-  {name:'Pluto',g:0.62,sky:0x010205,fog:[3500,5000],ground:0xd6c4aa,hemi:[0x8899aa,0x2a2420,0.7],sun:[0xffffff,2.2],grid:0.14,note:'Pluto: very thin atmosphere; drag is negligible.'}
+  {name:'Pluto',g:0.62,sky:0x010205,fog:[3500,5000],ground:0xd6c4aa,hemi:[0x8899aa,0x2a2420,0.7],sun:[0xffffff,2.2],grid:0.14,note:'Pluto: very thin atmosphere; drag is negligible.'},
+  {name:'School lab',g:9.8,lab:true,sky:0xdfe4e8,fog:[60,140],ground:0xc8c2b4,hemi:[0xffffff,0x8a8070,2.4],sun:[0xffffff,0.8],grid:0,note:'School lab: a real ball is slowed a little by air resistance.'}
 ];
 const GRAV=BODIES;
 const lowG=()=>S.g<0.05;
 const fmtNum=v=>String(parseFloat((+v).toFixed(4)));
-function gName(){const b=BODIES.find(b=>b.g===S.g);return b?b.name:'Custom';}
+const isLab=()=>!!BODIES[S.scene].lab;
+function gName(){if(BODIES[S.scene].g===S.g) return BODIES[S.scene].name; const b=BODIES.find(b=>b.g===S.g);return b?b.name:'Custom';}
 const TS=[1,0.5,0.25,0.1,2,10,50,100];
 const TS_LABEL=['Real time','Slow motion 0.5×','Slow motion 0.25×','Slow motion 0.1×','Fast forward 2×','Fast forward 10×','Fast forward 50×','Fast forward 100×'];
-const VIEWS=['Side','Launcher','Landing','Follow'];
+const VIEWS=['Side','Launcher','Landing','Follow','Bench'];
 const LIMITS={u:[1,40],angle:[0,90],h:[0,50]};
-function speedCfg(){return lowG()?{min:0.1,max:3,s1:0.1,s5:0.5}:{min:1,max:40,s1:1,s5:5};}
-function limitsFor(key){if(key==='u'){const c=speedCfg();return [c.min,c.max];} if(key==='g') return [0.001,50]; if(key==='t') return [0,flight?Number(flight.T.toFixed(3)):0]; return LIMITS[key];}
-const UNITS={u:{label:'launch speed u',unit:'m/s'},angle:{label:'launch angle θ',unit:'°'},h:{label:'launch height h',unit:'m'},g:{label:'gravity g',unit:'m/s²'},t:{label:'time in flight t',unit:'s'}};
+function speedCfg(){return isLab()?{min:0.5,max:10,s1:0.1,s5:0.5}:lowG()?{min:0.1,max:3,s1:0.1,s5:0.5}:{min:1,max:40,s1:1,s5:5};}
+function heightCfg(){return isLab()?{min:0,max:2,s1:0.05,s5:0.25}:{min:0,max:50,s1:1,s5:5};}
+function limitsFor(key){if(STEP[key]) return [STEP[key].min,STEP[key].max]; if(key==='u'){const c=speedCfg();return [c.min,c.max];} if(key==='h'){const c=heightCfg();return [c.min,c.max];} if(key==='g') return [0.001,50]; if(key==='t') return [0,flight?Number(flight.T.toFixed(3)):0]; return LIMITS[key];}
+const UNITS={u:{label:'launch speed u',unit:'m/s'},angle:{label:'launch angle θ',unit:'°'},h:{label:'launch height h',unit:'m'},g:{label:'gravity g',unit:'m/s²'},t:{label:'time in flight t',unit:'s'},dh:{label:'release height Δh',unit:'m'},m:{label:'ball mass m',unit:'kg'}};
 const withUnit=(t,u)=>u==='°'?t+'°':t+' '+u;
 const TRAIL_COLORS=[0xd00000,0x6a00f4,0x00704f,0xd18f00];
 const MAX_TRAILS=4;
 const COL={vx:0xff006e,vy:0x0a3d91,v:0x111111,ball:0xff8c00};
 const hex=c=>'#'+c.toString(16).padStart(6,'0');
-const POLE_X=-3;
+let POLE_X=-4;
 
 function predict(){
-  const g=S.g, th=S.angle*Math.PI/180;
-  const ux=S.u*Math.cos(th), uy=S.u*Math.sin(th);
+  const g=S.g, ramp=isLab()&&S.ramp;
+  const u0=ramp?Math.sqrt((S.roll?10/7:2)*g*S.dh):S.u, ang=ramp?0:S.angle, th=ang*Math.PI/180;
+  const ux=u0*Math.cos(th), uy=u0*Math.sin(th);
   const T=(uy+Math.sqrt(uy*uy+2*g*S.h))/g;
   const H=S.h+Math.max(uy,0)**2/(2*g);
-  return {g,ux,uy,T,H,R:ux*T};
+  return {g,ux,uy,T,H,R:ux*T,u:u0,angle:ang};
 }
 const posAt=(f,t)=>({x:f.ux*t,y:f.h+f.uy*t-0.5*f.g*t*t});
 function niceStep(x){for(const s of [0.1,0.2,0.25,0.5,1,2,5,10,20,30,60,120]) if(s>=x) return s; return 120;}
 
-let trails=[], flight=null, colorIdx=0, vis=1, lastMarkDt=null, arrowK=0.2;
+let trails=[], flight=null, colorIdx=0, vis=1, lastMarkDt=null, arrowK=0.2, rampRun=null;
+// curved release track (School lab): settings, shape and model
+const STEP={dh:{min:0.02,max:0.6,s1:0.01,s5:0.05},m:{min:0.005,max:1,s1:0.01,s5:0.05}};
+const rampL=()=>Math.max(0.25,1.5*S.dh);
+function rampPoints(n=160){const dh=S.dh,L=rampL(),pts=[]; for(let i=0;i<=n;i++){const q=i/n; pts.push(new THREE.Vector3(-L*(1-q),S.h+dh*(1-q)*(1-q),0));} return pts;}
+let rampGroup=null, railMat=null, rampPostMat=null;
+function rebuildRamp(){
+  if(!rampGroup){rampGroup=new THREE.Group(); scene.add(rampGroup); railMat=new THREE.MeshStandardMaterial({color:0xb0b8c0,metalness:0.6,roughness:0.35}); rampPostMat=new THREE.MeshStandardMaterial({color:0x6b4f35,roughness:0.8});}
+  rampGroup.children.slice().forEach(o=>{rampGroup.remove(o); if(!o.isSprite&&o.geometry) o.geometry.dispose(); if(o.material&&o.material!==railMat&&o.material!==rampPostMat){if(o.material.map) o.material.map.dispose(); o.material.dispose();}});
+  const on=isLab()&&S.ramp; rampGroup.visible=on; if(!on) return;
+  const pts=rampPoints(60), br=0.02, rail=0.8*br;
+  for(const z of [-0.012,0.012]){
+    const curve=new THREE.CatmullRomCurve3(pts.map(p=>new THREE.Vector3(p.x,p.y-rail,z)));
+    rampGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve,80,0.004,8,false),railMat));
+  }
+  const base=new THREE.CatmullRomCurve3(pts.map(p=>new THREE.Vector3(p.x,p.y-rail-0.007,0)));
+  rampGroup.add(new THREE.Mesh(new THREE.TubeGeometry(base,80,0.006,6,false),railMat));
+  const topY=S.h-0.03;
+  for(let i=0;i<pts.length;i+=10){const p=pts[i], hh=p.y-rail-0.007-topY; if(hh>0.01){const s=new THREE.Mesh(new THREE.BoxGeometry(0.012,hh,0.03),rampPostMat); s.position.set(p.x,topY+hh/2,0); rampGroup.add(s);}}
+  const stop=new THREE.Mesh(new THREE.BoxGeometry(0.01,0.045,0.045),new THREE.MeshStandardMaterial({color:0xd03030})); stop.position.set(pts[0].x-0.026,pts[0].y,0); rampGroup.add(stop);
+  const red=new THREE.MeshBasicMaterial({color:0xe03131});
+  const dl=new THREE.Mesh(new THREE.BoxGeometry(0.003,S.dh,0.003),red); dl.position.set(pts[0].x,S.h+S.dh/2,0.06); rampGroup.add(dl);
+  const hl=new THREE.Mesh(new THREE.BoxGeometry(rampL(),0.003,0.003),red.clone()); hl.position.set(pts[0].x/2,S.h,0.06); rampGroup.add(hl);
+  const lbl=makeLabel('Δh = '+fmtNum(S.dh)+' m',0.05,'#ffd0d0'); lbl.position.set(pts[0].x-0.09,S.h+S.dh/2,0.06); rampGroup.add(lbl);
+}
 let lookYaw=0, lookPitch=0;
 
 /* ---------- renderer & scene ---------- */
@@ -261,7 +292,39 @@ const BUILD={
   Titan:g=>{addRidge(g,12,0x4a3a26,700,1000,false);addLakes(g,30,0x15181c);addRocks(g,250,0x7a6a52,1.2);},
   Uranus:g=>{addBands(g,[0x7cbfc6,0x98d6dc]);addClouds(g,160,[0xc8f1f4,0xa5e0e6]);},
   Neptune:g=>{addBands(g,[0x2a4a9a,0x3d6ad0]);addClouds(g,120,[0xffffff,0x9fb8ff]);},
-  Pluto:g=>{addStars(g);addSkyBall(g,8,0xffffff,0xffffff,[1500,500,-2000]);addSkyBall(g,85,0x9a8f86,0x1a1814,[-900,500,-2200]);addRidge(g,14,0xf2efe8,1100,1600,false);addCraters(g,30,0xcab89c,0xb8a68a);addRocks(g,150,0xbfae94,2.0);}
+  Pluto:g=>{addStars(g);addSkyBall(g,8,0xffffff,0xffffff,[1500,500,-2000]);addSkyBall(g,85,0x9a8f86,0x1a1814,[-900,500,-2200]);addRidge(g,14,0xf2efe8,1100,1600,false);addCraters(g,30,0xcab89c,0xb8a68a);addRocks(g,150,0xbfae94,2.0);},
+  'School lab':g=>{
+    const X0=-3,X1=13,Z0=-4,Z1=4,HT=3.2,cx=(X0+X1)/2,LX=X1-X0,LZ=Z1-Z0;
+    const wallMat=new THREE.MeshStandardMaterial({color:0xe9e4d8,roughness:0.9,side:THREE.DoubleSide});
+    const wall=(w,x,z,ry)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(w,HT),wallMat); m.position.set(x,HT/2,z); m.rotation.y=ry; g.add(m);};
+    wall(LX,cx,Z0,0); wall(LX,cx,Z1,Math.PI); wall(LZ,X0,0,Math.PI/2); wall(LZ,X1,0,-Math.PI/2);
+    const ceil=new THREE.Mesh(new THREE.PlaneGeometry(LX,LZ),new THREE.MeshStandardMaterial({color:0xf4f4f2,side:THREE.DoubleSide}));
+    ceil.rotation.x=Math.PI/2; ceil.position.set(cx,HT,0); g.add(ceil);
+    const lightMat=new THREE.MeshBasicMaterial({color:0xffffff});
+    for(let x=X0+2;x<X1-1;x+=3) for(const z of [-2,2]){const p=new THREE.Mesh(new THREE.PlaneGeometry(1.2,0.3),lightMat); p.rotation.x=Math.PI/2; p.position.set(x,HT-0.01,z); g.add(p);}
+    const fg=new THREE.GridHelper(32,64,0x9a948a,0x9a948a); fg.material.transparent=true; fg.material.opacity=0.35; fg.position.set(5,0.004,0); g.add(fg);
+    const topMat=new THREE.MeshStandardMaterial({color:0x2f343b,roughness:0.6}), cabMat=new THREE.MeshStandardMaterial({color:0xb8a585,roughness:0.9});
+    for(let x=-1.5;x<12;x+=3.2){
+      const b=new THREE.Mesh(new THREE.BoxGeometry(2.8,0.86,0.7),cabMat); b.position.set(x,0.43,-3.6); g.add(b);
+      const t=new THREE.Mesh(new THREE.BoxGeometry(2.9,0.04,0.75),topMat); t.position.set(x,0.88,-3.6); g.add(t);
+    }
+    const wc=document.createElement('canvas'); wc.width=1024; wc.height=340; const w2=wc.getContext('2d');
+    w2.fillStyle='#ffffff'; w2.fillRect(0,0,1024,340); w2.strokeStyle='#9aa3ad'; w2.lineWidth=12; w2.strokeRect(6,6,1012,328);
+    w2.fillStyle='#1f4e79'; w2.font='600 72px "Barlow", system-ui, sans-serif'; w2.textAlign='center'; w2.fillText('Projectile motion',512,110);
+    w2.fillStyle='#b3261e'; w2.font='48px "Barlow", system-ui, sans-serif'; w2.fillText('s = ut + ½at²      v = u + at',512,200);
+    w2.fillStyle='#2e7d32'; w2.fillText('R = u² sin 2θ / g      g = 9.8 m/s²',512,280);
+    const wtex=new THREE.CanvasTexture(wc); wtex.colorSpace=THREE.SRGBColorSpace;
+    const wb=new THREE.Mesh(new THREE.PlaneGeometry(3.6,1.2),new THREE.MeshBasicMaterial({map:wtex})); wb.position.set(5,1.9,Z0+0.02); g.add(wb);
+    const winMat=new THREE.MeshBasicMaterial({color:0xcfe8ff});
+    for(const x of [0,10]){const w=new THREE.Mesh(new THREE.PlaneGeometry(2.4,1.3),winMat); w.position.set(x,2.0,Z0+0.02); g.add(w);}
+    const tape=new THREE.Mesh(new THREE.PlaneGeometry(12,0.14),new THREE.MeshBasicMaterial({color:0xf2d046})); tape.rotation.x=-Math.PI/2; tape.position.set(6,0.033,-0.1); g.add(tape);
+    const tick=new THREE.MeshBasicMaterial({color:0x222222});
+    for(let k=1;k<=120;k++){
+      const d=k*0.1, big=k%5===0, t=new THREE.Mesh(new THREE.PlaneGeometry(0.006,big?0.12:0.06),tick);
+      t.rotation.x=-Math.PI/2; t.position.set(d,0.036,big?-0.1:-0.07); g.add(t);
+      if(big){const l=makeLabel(d.toFixed(1)+' m',0.06); l.position.set(d,0.06,-0.24); g.add(l);}
+    }
+  }
 };
 const decoCache={};
 function applyScene(){
@@ -271,6 +334,9 @@ function applyScene(){
   hemi.color.set(b.hemi[0]); hemi.groundColor.set(b.hemi[1]); hemi.intensity=b.hemi[2];
   sun.color.set(b.sun[0]); sun.intensity=b.sun[1];
   grid.material.opacity=b.grid;
+  const lab=!!b.lab;
+  distMarks.visible=!lab; grid.visible=!lab; lane.scale.y=lab?0.12:1; POLE_X=lab?-1.4:-4;
+  tower.material.color.set(lab?0x8a6a48:0x9a8c7a); cannon.scale.setScalar(lab?0.4:1);
   for(const k in decoCache) decoCache[k].visible=false;
   if(!decoCache[b.name]){const g=new THREE.Group(); BUILD[b.name](g); scene.add(g); decoCache[b.name]=g;}
   decoCache[b.name].visible=true;
@@ -300,12 +366,13 @@ function makeLabel(text,worldH,color='#ffffff'){
 const postMat=new THREE.MeshStandardMaterial({color:0xf5f5f5});
 const tickMat=new THREE.MeshBasicMaterial({color:0xffffff});
 const marks=[]; for(let d=10;d<=200;d+=10)marks.push(d); for(let d=250;d<=1000;d+=50)marks.push(d); marks.push(1500,2000);
+const distMarks=new THREE.Group(); scene.add(distMarks);
 for(const d of marks){
   const k=d<=100?1:d<=300?2.5:d<=1000?6:12;
   const post=new THREE.Mesh(new THREE.BoxGeometry(0.12*k,0.8*k,0.12*k),postMat);
-  post.position.set(d,0.4*k,-1.2*k); scene.add(post);
-  const l=makeLabel(d+' m',0.9*k); l.position.set(d,1.5*k,-1.2*k); scene.add(l);
-  if(d<=200){const t=new THREE.Mesh(new THREE.PlaneGeometry(0.08,1.6),tickMat); t.rotation.x=-Math.PI/2; t.position.set(d,0.035,0); scene.add(t);}
+  post.position.set(d,0.4*k,-1.2*k); distMarks.add(post);
+  const l=makeLabel(d+' m',0.9*k); l.position.set(d,1.5*k,-1.2*k); distMarks.add(l);
+  if(d<=200){const t=new THREE.Mesh(new THREE.PlaneGeometry(0.08,1.6),tickMat); t.rotation.x=-Math.PI/2; t.position.set(d,0.035,0); distMarks.add(t);}
 }
 
 // height pole (vertical projection)
@@ -313,12 +380,14 @@ const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1,12),new THREE.M
 scene.add(pole);
 const poleLabels=new THREE.Group(); scene.add(poleLabels);
 function rebuildPole(H){
-  const top=Math.max(10,Math.ceil((H+2)/5)*5);
-  const k=clamp(top/40,1,60);
+  const lab=isLab();
+  const top=lab?Math.max(1,Math.ceil((H+0.2)/0.25)*0.25):Math.max(10,Math.ceil((H+2)/5)*5);
+  const k=lab?0.15:clamp(top/40,1,60);
   pole.scale.set(k,top,k); pole.position.set(POLE_X,top/2,0);
   poleLabels.children.slice().forEach(s=>{poleLabels.remove(s);s.material.map.dispose();s.material.dispose();});
-  const step=top<=40?5:top<=150?20:top<=400?50:100;
-  for(let y=step;y<=top;y+=step){const l=makeLabel(y+' m',0.6*k); l.position.set(POLE_X-0.9*k,y,0); poleLabels.add(l);}
+  const step=lab?0.25:top<=40?5:top<=150?20:top<=400?50:100;
+  const ls=lab?0.06:0.6*k, off=lab?0.13:0.9*k;
+  for(let y=step;y<=top+1e-9;y+=step){const l=makeLabel((lab?y.toFixed(2):y)+' m',ls); l.position.set(POLE_X-off,y,0); poleLabels.add(l);}
 }
 
 // tower & cannon
@@ -497,9 +566,26 @@ function addMarker(f,t){
   const pd=new THREE.Mesh(dotGeo,f.tr.mat); pd.position.set(POLE_X,p.y,0); pd.scale.setScalar(s); f.tr.proj.add(pd);
 }
 function applyToggles(){for(const tr of trails){tr.dots.visible=S.markers;tr.proj.visible=S.markers&&S.proj;}}
-const trailInfo=(f,end)=>`${f.angle}°, ${f.u} m/s, h ${f.h} m, ${f.gname}: ${end}`;
+const trailInfo=(f,end)=>f.ramp?`Ramp Δh ${fmtNum(f.ramp.dh)} m, ${fmtNum(f.ramp.m)} kg, ${f.ramp.roll?'rolls':'slides'}, h ${f.h} m: ${end}`:`${f.angle}°, ${f.u} m/s, h ${f.h} m, ${f.gname}: ${end}`;
 
 function launch(){
+  if(isLab()&&S.ramp) startRamp(); else startFlight(false);
+}
+function startRamp(){
+  S.paused=false; S.inspect=null;
+  if(flight&&!flight.done){flight.done=true; flight.tr.info=trailInfo(flight,'stopped');}
+  flight=null; stopWhoosh();
+  const pts=rampPoints(), c=S.roll?5/7:1, g=S.g, y0=pts[0].y, times=[0];
+  const sp=y=>Math.sqrt(Math.max(0,c*2*g*(y0-y)));
+  for(let i=1;i<pts.length;i++){const ds=pts[i].distanceTo(pts[i-1]), v=(sp(pts[i-1].y)+sp(pts[i].y))/2; times.push(times[i-1]+ds/Math.max(v,1e-4));}
+  rampRun={pts,times,t:0,total:times[times.length-1],sp};
+  startWhoosh(); applyView(); drawPanel();
+}
+function stepRamp(dt){
+  rampRun.t+=dt*TS[S.tsi];
+  if(rampRun.t>=rampRun.total){rampRun=null; startFlight(true);}
+}
+function startFlight(fromRamp){
   S.paused=false; S.inspect=null;
   const p=predict();
   if(flight&&!flight.done) flight.tr.info=trailInfo(flight,'stopped');
@@ -508,10 +594,10 @@ function launch(){
   // time dots: 8 equal intervals from launch to the top of the path, so the dots are symmetric about the apex
   const tUp=Math.max(p.uy,0)/p.g;
   const markDt=tUp>1e-6?tUp/8:Math.max(p.T/16,1e-3);
-  flight={...p,u:S.u,angle:S.angle,h:S.h,gname:gName()==='Custom'?'g = '+fmtNum(S.g):gName(),t:0,tr,markDt,mi:0,vis,done:false,lx:0,ly:S.h,minStep:Math.max(p.R,p.H,1)/4000};
+  flight={...p,u:Number(p.u.toFixed(2)),angle:p.angle,h:S.h,ramp:(isLab()&&S.ramp)?{dh:S.dh,m:S.m,roll:S.roll}:null,gname:gName()==='Custom'?'g = '+fmtNum(S.g):gName(),t:0,tr,markDt,mi:0,vis,done:false,lx:0,ly:S.h,minStep:Math.max(p.R,p.H,1)/4000};
   tr.info=trailInfo(flight,'in flight…');
   addPoint(tr,0,S.h);
-  replay(boomSnd); if(p.T>0) startWhoosh();
+  if(!fromRamp) replay(boomSnd); if(p.T>0) startWhoosh();
   if(p.T<=0){flight.done=true; tr.info=trailInfo(flight,'range 0.0 m');}
   lastMarkDt=Number(markDt.toPrecision(3)); applyToggles(); applyView(); drawPanel();
 }
@@ -524,44 +610,73 @@ function stepFlight(dt){
   if(f.done||Math.hypot(q.x-f.lx,q.y-f.ly)>=f.minStep){addPoint(f.tr,q.x,q.y);f.lx=q.x;f.ly=q.y;}
   if(f.done){f.tr.info=trailInfo(f,`range ${f.R.toFixed(1)} m`);stopWhoosh();landSpot.position.set(f.R,0.2,0);replay(thudSnd);drawPanel();}
 }
-function clearTrails(){trails.forEach(removeTrail);trails=[];flight=null;colorIdx=0;stopWhoosh();S.paused=false;S.inspect=null;}
+function clearTrails(){trails.forEach(removeTrail);trails=[];flight=null;rampRun=null;colorIdx=0;stopWhoosh();S.paused=false;S.inspect=null;}
 function live(){
   const p=predict();
+  if(rampRun){
+    const r=rampRun, ts=r.times, n=ts.length-1; let i=0; while(i<n-1&&ts[i+1]<r.t) i++;
+    const a=r.pts[i], b=r.pts[i+1], f=clamp((r.t-ts[i])/Math.max(ts[i+1]-ts[i],1e-9),0,1);
+    const x=a.x+(b.x-a.x)*f, y=a.y+(b.y-a.y)*f, sp=r.sp(y), dx=b.x-a.x, dy=b.y-a.y, dl=Math.hypot(dx,dy)||1;
+    return {t:0,x,y,vx:sp*dx/dl,vy:sp*dy/dl};
+  }
   if(flight){const t=S.inspect?S.inspect.t:flight.t,q=posAt(flight,t);return {t,x:q.x,y:q.y,vx:flight.ux,vy:flight.uy-flight.g*t};}
+  if(isLab()&&S.ramp) return {t:0,x:-rampL(),y:S.h+S.dh,vx:0,vy:0};
   return {t:0,x:0,y:S.h,vx:p.ux,vy:p.uy};
 }
 
 function onParams(){
   const p=predict();
-  vis=clamp(Math.max(p.R,p.H*1.6)/35,1,60);
-  arrowK=0.12*Math.max(p.R,1.6*p.H,10)/Math.max(S.u,0.1);
-  tower.visible=S.h>0; tower.scale.y=Math.max(S.h,0.01); tower.position.set(-0.5,S.h/2,0);
-  cannon.position.set(0,S.h,0); barrelPivot.rotation.z=S.angle*Math.PI/180;
+  const labM=isLab();
+  vis=labM?clamp(Math.max(p.R,p.H*1.6)/35,0.1,0.5):clamp(Math.max(p.R,p.H*1.6)/35,1,60);
+  arrowK=0.12*Math.max(p.R,1.6*p.H,labM?1:10)/Math.max(p.u,0.1);
+  // the bench/tower's front face is exactly at x = 0, so the projectile leaves from the very edge;
+  // in the lab the bench top sits just below the launch point so the launcher rests on it
+  const benchH=labM?Math.max(S.h-0.03,0.01):Math.max(S.h,0.01);
+  tower.visible=S.h>0; tower.scale.set(labM?0.4:1,benchH,labM?0.25:1); tower.position.set(labM?-0.6:-1.5,benchH/2,0);
+  cannon.position.set(0,S.h,0); barrelPivot.rotation.z=S.angle*Math.PI/180; cannon.visible=!(labM&&S.ramp);
+  if(rampRun){rampRun=null; stopWhoosh();}
+  rebuildRamp();
   if(flight&&flight.done){flight=null;S.inspect=null;}
-  rebuildPole(Math.max(p.H,flight?flight.H:0));
-  landRing.position.set(p.R,0.06,0); landRing.scale.setScalar(vis);
+  rebuildPole(Math.max(p.H,flight?flight.H:0,(labM&&S.ramp)?S.h+S.dh:0));
+  landRing.position.set(p.R,0.06,0); landRing.scale.setScalar(labM?0.06:vis);
+  benchLine.position.set(6,S.h,0);
+  if(VIEWS[S.viewIdx]==='Bench'&&typeof dolly!=='undefined') applyView();
   ball.scale.setScalar(vis); poleDot.scale.setScalar(vis); groundDot.scale.setScalar(vis);
 }
 
 /* ---------- viewpoints ---------- */
 function applyView(){
-  const p=predict(), R=Math.max(p.R,6), H=Math.max(p.H,3), v=VIEWS[S.viewIdx];
+  const lab=isLab(), p=predict(), R=Math.max(p.R,lab?1:6), H=Math.max(p.H,lab?0.5:3), v=VIEWS[S.viewIdx];
   if(v==='Side'){
-    const D=clamp(0.62*Math.max(R,1.7*H),9,3000);
-    dolly.position.set(R/2,0,D); dolly.rotation.y=0; lookYaw=0; lookPitch=Math.atan2(H*0.5-1.6,D);
+    const x0=(lab&&S.ramp)?-rampL():0, span=R-x0;
+    const D=lab?clamp(0.62*Math.max(span,1.7*H),1.2,3.6):clamp(0.62*Math.max(R,1.7*H),9,3000);
+    dolly.position.set((x0+R)/2,0,D); dolly.rotation.y=0; lookYaw=0; lookPitch=Math.atan2(H*0.5-1.6,D);
   }else if(v==='Launcher'){
-    dolly.position.set(-1.2,S.h,1.1); dolly.rotation.y=-Math.PI/2; lookYaw=0.06;
+    if(lab) dolly.position.set(-0.4,0,0.9); else dolly.position.set(-1.2,S.h,1.1);
+    dolly.rotation.y=-Math.PI/2; lookYaw=0.06;
     lookPitch=clamp(Math.atan2(H-S.h,R*0.5),-0.3,0.6)*0.6;
+  }else if(v==='Bench'){
+    // side-on with your eyes level with the launch point (bench height)
+    const x0=S.ramp?-rampL():0, span=R-x0;
+    const D=clamp(0.62*Math.max(span,1.7*H),1.2,3.6);
+    const eye=(renderer.xr.isPresenting&&camera.position.y>0.3)?camera.position.y:1.6;
+    dolly.position.set(Math.max((x0+R)/2,0.6+x0),S.h-eye,D); dolly.rotation.y=0; lookYaw=0; lookPitch=0;
   }else if(v==='Follow'){
     const L=live(); dolly.position.set(L.x,Math.max(0,L.y-1.4),followDist()); dolly.rotation.y=0; lookYaw=0; lookPitch=-0.03;
   }else{
-    dolly.position.set(R+Math.max(4,R*0.06),0,3); dolly.rotation.y=Math.PI/2; lookYaw=-0.05;
+    if(lab) dolly.position.set(R+0.8,0,0.8); else dolly.position.set(R+Math.max(4,R*0.06),0,3);
+    dolly.rotation.y=Math.PI/2; lookYaw=-0.05;
     lookPitch=Math.atan2(H*0.6,R*0.6);
   }
+  benchLine.visible=v==='Bench'&&lab;
   updateDesktopCam();
 }
+// thin red line at launch height, shown in the Bench view
+const benchLine=new THREE.Mesh(new THREE.BoxGeometry(12,0.004,0.004),new THREE.MeshBasicMaterial({color:0xe03131,transparent:true,opacity:0.7}));
+benchLine.visible=false; scene.add(benchLine);
+let benchFixFrames=0;
 function updateDesktopCam(){if(!renderer.xr.isPresenting){camera.position.set(0,1.6,0);camera.rotation.set(lookPitch,lookYaw,0);}}
-function followDist(){const p=flight||predict(); return clamp(0.06*Math.max(p.R,p.H,20),4,80);}
+function followDist(){const p=flight||predict(); return isLab()?clamp(0.25*Math.max(p.R,p.H,1),0.6,2.5):clamp(0.06*Math.max(p.R,p.H,20),4,80);}
 const followTarget=new THREE.Vector3();
 
 /* ---------- console panel (canvas: DOM on desktop, texture in VR) ---------- */
@@ -637,12 +752,13 @@ function drawPanel(){
     font(26,'600'); ctx.fillStyle='#c9d4e3'; ctx.textAlign='left';
     ctx.fillText(S.picker==='scene'?'Choose a world (sets the scenery and its gravity)':'Choose a preset g (the scenery stays the same)',30,130);
     const cur=S.picker==='scene'?S.scene:BODIES.findIndex(b=>b.g===S.g);
-    BODIES.forEach((b,i)=>button('pick:'+i,30+(i%4)*290,160+Math.floor(i/4)*160,270,140,`${b.name}\n${b.g} m/s²`,cur===i?'on':'normal',30));
+    BODIES.forEach((b,i)=>button('pick:'+i,30+(i%5)*230,160+Math.floor(i/5)*160,215,140,`${b.name}\n${b.g} m/s²`,cur===i?'on':'normal',b.lab?26:30));
     button('pickcancel',940,665,230,100,'Cancel','normal',28);
     panelTex.needsUpdate=true; return;
   }
   button('music',850,18,150,52,S.music?'♪ Music on':'♪ Music off',S.music?'on':'off',21);
   button('sound',1010,18,160,52,S.sound?'🔊 Sound on':'🔇 Sound off',S.sound?'on':'off',21);
+  if(isLab()&&!S.inspect) button('launcher',600,18,240,52,S.ramp?'Launcher: Ramp ↻':'Launcher: Spring ↻','normal',20);
   if(S.inspect&&flight){
     const I=S.inspect, f=flight, L=live(), sp=Math.hypot(L.vx,L.vy), ang=Math.atan2(L.vy,L.vx)*180/Math.PI;
     font(28,'600'); ctx.fillStyle='#ffffff'; ctx.textAlign='left'; ctx.fillText('Inspect the last flight',30,124);
@@ -676,7 +792,10 @@ function drawPanel(){
   }
 
   const sc=speedCfg();
-  const rows=[['u','Launch speed  u',v=>fmtNum(v)+' m/s',sc.s5,sc.s1],['angle','Launch angle  θ',v=>fmtNum(v)+'°',5,1],['h','Launch height  h',v=>fmtNum(v)+' m',5,1]];
+  const hc=heightCfg();
+  const rampUI=isLab()&&S.ramp;
+  const rows=rampUI?[['dh','Release height Δh',v=>fmtNum(v)+' m',0.05,0.01],['m','Ball mass  m',v=>fmtNum(v)+' kg',0.05,0.01],['h','Bench height  h',v=>fmtNum(v)+' m',hc.s5,hc.s1]]
+    :[['u','Launch speed  u',v=>fmtNum(v)+' m/s',sc.s5,sc.s1],['angle','Launch angle  θ',v=>fmtNum(v)+'°',5,1],['h','Launch height  h',v=>fmtNum(v)+' m',hc.s5,hc.s1]];
   rows.forEach(([k,label,fv,big,small],i)=>{
     const y=100+i*70;
     rich(label,30,y+36,25,'#c9d4e3');
@@ -687,11 +806,13 @@ function drawPanel(){
   rich('Gravity  g',30,346,25,'#c9d4e3');
   button('edit:g',250,310,200,54,fmtNum(S.g)+' m/s²','value',26);
   button('grav',460,310,196,54,'Preset: '+gName()+' ▾','normal',21);
-  rich('Playback',30,416,25,'#c9d4e3'); button('ts',250,380,406,54,TS_LABEL[S.tsi]+'  ↻','normal',24);
+  rich('Playback',30,416,25,'#c9d4e3');
+  if(rampUI){button('ts',250,380,200,54,TS_LABEL[S.tsi],'normal',18); button('rollmode',460,380,196,54,S.roll?'Ball rolls ↻':'Ball slides ↻','normal',20);}
+  else button('ts',250,380,406,54,TS_LABEL[S.tsi]+'  ↻','normal',24);
   [['vectors','Vectors'],['proj','Projections'],['markers','Time dots'],['answers','Answers']]
     .forEach(([k,l],i)=>button(k,30+i*157,456,149,56,(S[k]?'✓ ':'')+l,S[k]?'on':'off',22));
   button('launch',30,530,200,96,'Launch','primary',36);
-  const canPause=flight&&!flight.done, canInspect=flight&&flight.done&&flight.T>0;
+  const canPause=(flight&&!flight.done)||!!rampRun, canInspect=flight&&flight.done&&flight.T>0;
   if(canInspect) button('inspect',240,530,140,96,'🔍 Inspect','normal',22);
   else button('pause',240,530,140,96,S.paused&&canPause?'▶ Resume':'⏸ Pause',S.paused&&canPause?'on':'normal',23);
   button('clear',390,530,130,96,'Clear\ntrails','normal',23);
@@ -706,13 +827,15 @@ function drawPanel(){
   });
   rich('Ground dot: horizontal motion; pole dot: vertical motion',30,712,20,'#93a3ba');
   rich('Model: constant g, no air resistance'+(lastMarkDt?`; time dots every ${lastMarkDt} s`:''),30,744,20,'#93a3ba');
-  rich(BODIES[S.scene].note,30,776,20,'#ffc36b');
+  rich(rampUI?(S.roll?'Rolling: some GPE becomes rotational KE, so u is smaller.':'Sliding (no friction): all GPE becomes KE; mass cancels.'):BODIES[S.scene].note,30,776,20,'#ffc36b');
 
   const p=predict(), L=live(), A=S.answers;
   card(680,96,490,256,'Predicted','#ffc36b',A?'':'hidden: work it out first');
-  [['u_x = u cos θ',f2(p.ux)+' m/s'],['u_y = u sin θ',f2(p.uy)+' m/s'],['Time of flight',f2(p.T)+' s'],['Max height',f2(p.H)+' m'],['Range',f2(p.R)+' m']]
+  const f3=v=>String(Number(v.toPrecision(3)));
+  (rampUI?[[S.roll?'u = √(10gΔh / 7)':'u = √(2gΔh)',f2(p.u)+' m/s'],['GPE lost  mgΔh',f3(S.m*S.g*S.dh)+' J'],['KE at launch  ½mu²',f3(0.5*S.m*p.u*p.u)+' J'],['Time of flight',f2(p.T)+' s'],['Range',f2(p.R)+' m']]
+   :[['u_x = u cos θ',f2(p.ux)+' m/s'],['u_y = u sin θ',f2(p.uy)+' m/s'],['Time of flight',f2(p.T)+' s'],['Max height',f2(p.H)+' m'],['Range',f2(p.R)+' m']])
     .forEach(([l,v],i)=>{const y=176+i*36; rich(l,702,y,24,'#dfe6f0'); right(A?v:'?',1150,y,24,A?'#ffffff':'#5c6b82','600');});
-  const status=flight?(flight.done?'landed':S.paused?'paused':'in flight'):'at launch';
+  const status=rampRun?(S.paused?'paused':'on the ramp'):flight?(flight.done?'landed':S.paused?'paused':'in flight'):'at launch';
   card(680,368,490,232,'Live','#7fd1ff',status);
   [['t',f2(L.t)+' s'],['x (horizontal)',f2(L.x)+' m'],['y (height)',f2(L.y)+' m'],['v_x',f2(L.vx)+' m/s'],['v_y',f2(L.vy)+' m/s']]
     .forEach(([l,v],i)=>{const y=444+i*34; rich(l,702,y,24,'#dfe6f0'); right(v,1150,y,24,'#ffffff','600');});
@@ -731,7 +854,7 @@ function commitKeypad(){
   if(K.key==='g') setG(v); else if(K.key==='t') setInspectT(v); else {S[K.key]=v; onParams();}
 }
 function setInspectT(t){if(!S.inspect||!flight) return; S.inspect.t=clamp(t,0,flight.T); tagStatus=''; placeInspectCam();}
-function sideD(){const f=flight; return clamp(0.62*Math.max(Math.max(f.R,6),1.7*Math.max(f.H,3)),9,3000);}
+function sideD(){const f=flight, lab=isLab(); return lab?clamp(0.62*Math.max(Math.max(f.R,1),1.7*Math.max(f.H,0.5)),1.2,3.6):clamp(0.62*Math.max(Math.max(f.R,6),1.7*Math.max(f.H,3)),9,3000);}
 function placeInspectCam(){
   const I=S.inspect,f=flight; if(!I||!f) return;
   const q=posAt(f,I.t);
@@ -741,10 +864,12 @@ function placeInspectCam(){
 }
 function act(id){
   audioUnlock(); if(id!=='launch') playClick();
-  const m=id.match(/^(u|angle|h)([+-]\d)$/);
+  const m=id.match(/^(u|angle|h|dh|m)([+-]\d)$/);
   if(m){
     const n=Number(m[2]);
-    if(m[1]==='u'){const c=speedCfg(); S.u=Math.round(clamp(S.u+Math.sign(n)*(Math.abs(n)===5?c.s5:c.s1),c.min,c.max)*100)/100;}
+    if(STEP[m[1]]){const c=STEP[m[1]]; S[m[1]]=Math.round(clamp(S[m[1]]+Math.sign(n)*(Math.abs(n)===5?c.s5:c.s1),c.min,c.max)*1000)/1000;}
+    else if(m[1]==='u'){const c=speedCfg(); S.u=Math.round(clamp(S.u+Math.sign(n)*(Math.abs(n)===5?c.s5:c.s1),c.min,c.max)*100)/100;}
+    else if(m[1]==='h'){const c=heightCfg(); S.h=Math.round(clamp(S.h+Math.sign(n)*(Math.abs(n)===5?c.s5:c.s1),c.min,c.max)*100)/100;}
     else{const [a,b]=LIMITS[m[1]]; S[m[1]]=Math.round(clamp(S[m[1]]+n,a,b)*100)/100;}
     onParams();
   }
@@ -759,7 +884,7 @@ function act(id){
       else if(k==='dotback') setInspectT((Math.ceil(I.t/f.markDt-1e-6)-1)*f.markDt);
       else if(k==='dotfwd') setInspectT((Math.floor(I.t/f.markDt+1e-6)+1)*f.markDt);
       else if(k==='top') setInspectT(Math.max(f.uy,0)/f.g);
-      else if(k==='zoomin'){if(I.full) I.full=false; else I.d=Math.max(1.2,I.d/1.6); placeInspectCam();}
+      else if(k==='zoomin'){if(I.full) I.full=false; else I.d=Math.max(isLab()?0.2:1.2,I.d/1.6); placeInspectCam();}
       else if(k==='zoomout'){if(!I.full){I.d*=1.6; if(I.d>sideD()) I.full=true;} placeInspectCam();}
       else if(k==='full'){I.full=true; placeInspectCam();}
       else if(k==='done'){S.inspect=null; tagStatus=''; applyView();}
@@ -776,13 +901,28 @@ function act(id){
       else if(K.text.length<8&&!(k==='.'&&K.text.includes('.'))){K.text+=k;K.err='';}
     }
   }
-  else if(id.startsWith('pick:')){const i=Number(id.slice(5)); if(S.picker==='scene'){S.scene=i;applyScene();} setGravity(i); S.picker=null;}
+  else if(id.startsWith('pick:')){
+    const i=Number(id.slice(5));
+    if(S.picker==='scene'){
+      const was=isLab(), prev={u:S.u,angle:S.angle,h:S.h};
+      S.scene=i; const now=isLab();
+      if(was!==now) clearTrails();
+      applyScene(); setGravity(i);
+      if(now&&!was){S.prevNormal=prev; S.u=3; S.angle=30; S.h=0.9;}
+      else if(was&&!now&&S.prevNormal){Object.assign(S,S.prevNormal); const c=speedCfg(); S.u=clamp(S.u,c.min,c.max);}
+      if(was&&!now&&VIEWS[S.viewIdx]==='Bench') S.viewIdx=0;
+      onParams(); applyView();
+    } else setGravity(i);
+    S.picker=null;
+  }
   else switch(id){
     case 'grav': S.picker='scene'; break;
     case 'inspect':
-      if(flight&&flight.done&&flight.T>0){S.inspect={t:clamp(Math.max(flight.uy,0)/flight.g,0,flight.T),d:clamp(0.06*Math.max(flight.R,flight.H,20),2,200),full:false}; tagStatus=''; placeInspectCam();}
+      if(flight&&flight.done&&flight.T>0){S.inspect={t:clamp(Math.max(flight.uy,0)/flight.g,0,flight.T),d:isLab()?clamp(0.3*Math.max(flight.R,flight.H,1),0.4,3):clamp(0.06*Math.max(flight.R,flight.H,20),2,200),full:false}; tagStatus=''; placeInspectCam();}
       break;
-    case 'pause': if(flight&&!flight.done){S.paused=!S.paused; if(S.paused) stopWhoosh(); else startWhoosh();} break;
+    case 'pause': if((flight&&!flight.done)||rampRun){S.paused=!S.paused; if(S.paused) stopWhoosh(); else startWhoosh();} break;
+    case 'launcher': S.ramp=!S.ramp; onParams(); applyView(); break;
+    case 'rollmode': S.roll=!S.roll; onParams(); break;
     case 'pickcancel': S.picker=null; break;
     case 'ts': S.tsi=(S.tsi+1)%TS.length; break;
     case 'vectors': case 'proj': case 'markers': case 'answers': S[id]=!S[id]; break;
@@ -794,7 +934,7 @@ function act(id){
     case 'sound': S.sound=!S.sound; setMute(); break;
     case 'launch': launch(); break;
     case 'clear': clearTrails(); onParams(); break;
-    case 'view': S.viewIdx=(S.viewIdx+1)%VIEWS.length; applyView(); break;
+    case 'view': do{S.viewIdx=(S.viewIdx+1)%VIEWS.length;}while(VIEWS[S.viewIdx]==='Bench'&&!isLab()); applyView(); break;
   }
   applyToggles(); drawPanel();
 }
@@ -880,7 +1020,7 @@ vrBtn.addEventListener('click',async()=>{
     await renderer.xr.setSession(session); vrBtn.textContent='Exit VR';
   }catch(e){session=null;vrBtn.textContent='VR failed to start ('+(e.name||'error')+')';console.error(e);}
 });
-renderer.xr.addEventListener('sessionstart',()=>{panelMesh.visible=true;});
+renderer.xr.addEventListener('sessionstart',()=>{panelMesh.visible=true;benchFixFrames=10;});
 renderer.xr.addEventListener('sessionend',()=>{panelMesh.visible=false;hoverMap.c0=hoverMap.c1=null;resize();updateDesktopCam();drawPanel();});
 
 /* ---------- loop ---------- */
@@ -895,10 +1035,12 @@ const clock=new THREE.Clock(); let frame=0;
 const tmpO=new THREE.Vector3(), tmpV=new THREE.Vector3(), camPos=new THREE.Vector3();
 function loop(){
   const dt=Math.min(clock.getDelta(),0.05); frame++;
+  if(benchFixFrames>0&&renderer.xr.isPresenting){benchFixFrames--; if(benchFixFrames===0&&VIEWS[S.viewIdx]==='Bench') applyView();}
+  if(rampRun&&!S.paused){stepRamp(dt); if(frame%4===0) drawPanel();}
   if(flight&&!flight.done&&!S.paused){stepFlight(dt); if(frame%4===0) drawPanel();}
   const L=live();
   ball.position.set(L.x,L.y,0);
-  if(flight&&!flight.done&&whoosh.isPlaying) updateWhoosh(L);
+  if(((flight&&!flight.done)||rampRun)&&whoosh.isPlaying) updateWhoosh(L);
   if(VIEWS[S.viewIdx]==='Follow'&&!S.inspect){
     followTarget.set(L.x,Math.max(0,L.y-1.4),followDist());
     dolly.position.lerp(followTarget,1-Math.exp(-dt*6));
@@ -906,7 +1048,8 @@ function loop(){
   groundDot.position.set(L.x,0.05,0); poleDot.position.set(POLE_X,L.y,0);
   groundDot.visible=poleDot.visible=S.proj;
   camera.getWorldPosition(camPos);
-  for(const o of [ball,poleDot,groundDot]) o.scale.setScalar(clamp(camPos.distanceTo(o.position)*0.03,0.3,60));
+  const minS=isLab()?0.08:0.3;
+  for(const o of [ball,poleDot,groundDot]) o.scale.setScalar(clamp(camPos.distanceTo(o.position)*0.03,minS,60));
   landRing.visible=S.answers;
   const showVec=S.vectors&&(!(flight&&flight.done)||!!S.inspect);
   arrVx.visible=arrVy.visible=arrV.visible=showVec;
@@ -923,7 +1066,7 @@ function loop(){
     const st=inspecting?'Selected point':'Paused';
     if(tagStatus!==st){drawTag(L,st);tagStatus=st;}
     tag.position.set(L.x,L.y,0);
-    const th=Math.max(camPos.distanceTo(tag.position)*0.1,0.2);
+    const th=Math.max(camPos.distanceTo(tag.position)*0.1,isLab()?0.08:0.2);
     tag.scale.set(th*TAG_W/TAG_H,th,1);
   }else tagStatus='';
   if(renderer.xr.isPresenting) updateControllers();

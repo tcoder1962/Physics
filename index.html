@@ -224,13 +224,14 @@ function jitterGeo(geo,amt){
   for(let i=0;i<p.count;i++){
     v.fromBufferAttribute(p,i); const k=v.x.toFixed(3)+','+v.y.toFixed(3)+','+v.z.toFixed(3);
     let d=key.get(k); if(!d){d=[rr(-amt,amt),rr(-amt,amt),rr(-amt,amt)]; key.set(k,d);}
-    p.setXYZ(i,v.x*(1+d[0]),v.y+d[1]*0.5,v.z*(1+d[2]));
+    p.setXYZ(i,v.x*(1+d[0]),Math.abs(v.y+0.5)<1e-3?v.y:v.y+d[1]*0.5,v.z*(1+d[2]));
   }
   geo.computeVertexNormals(); return geo;
 }
 const rockGeos=[0,1,2].map(()=>jitterGeo(new THREE.IcosahedronGeometry(1,1),0.22));
-const mtnGeos=[0,1,2,3].map(()=>jitterGeo(new THREE.ConeGeometry(1,1,11,6),0.18));
-const mesaGeo=jitterGeo(new THREE.CylinderGeometry(0.6,1,1,10,3),0.07);
+// open-ended cones: no underside that could show as dark triangles; the base ring stays flat on the ground
+const mtnGeos=[0,1,2,3].map(()=>jitterGeo(new THREE.ConeGeometry(1,1,11,6,true),0.11));
+const mesaGeo=jitterGeo(new THREE.CylinderGeometry(0.6,1,1,10,3),0.05);
 const white=()=>new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,flatShading:true});
 
 let glowTex=null;
@@ -240,6 +241,18 @@ function glow(){
   const gr=x.createRadialGradient(64,64,0,64,64,64);
   gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(0.18,'rgba(255,250,235,0.85)'); gr.addColorStop(0.45,'rgba(255,240,210,0.25)'); gr.addColorStop(1,'rgba(255,240,200,0)');
   x.fillStyle=gr; x.fillRect(0,0,128,128); glowTex=new THREE.CanvasTexture(c); glowTex.colorSpace=THREE.SRGBColorSpace; return glowTex;
+}
+// Saturn with its rings, hanging in another world's sky
+function addSaturnSky(g,pos,r){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,48,24),new THREE.MeshStandardMaterial({map:planetTex('saturn'),roughness:1,fog:false,emissive:0x3a3020}));
+  m.position.set(...pos); m.rotation.z=0.35; g.add(m);
+  const inner=r*1.25, outer=r*2.3, geo=new THREE.RingGeometry(inner,outer,160,1), p=geo.attributes.position, uv=geo.attributes.uv;
+  for(let i=0;i<p.count;i++){const rad=Math.hypot(p.getX(i),p.getY(i)); uv.setXY(i,(rad-inner)/(outer-inner),0.5);}
+  const c=document.createElement('canvas'); c.width=256; c.height=4; const x=c.getContext('2d');
+  for(let i=0;i<256;i++){const t=i/256; let a=0.85; if(t>0.6&&t<0.66) a=0.05; a*=0.6+0.4*Math.abs(Math.sin(t*60)); x.fillStyle=`rgba(225,205,160,${a})`; x.fillRect(i,0,1,4);}
+  const rt=new THREE.CanvasTexture(c); rt.colorSpace=THREE.SRGBColorSpace;
+  const ring=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:rt,transparent:true,side:THREE.DoubleSide,fog:false,depthWrite:false}));
+  ring.position.set(...pos); ring.rotation.set(Math.PI/2-0.32,0,0.35); g.add(ring);
 }
 function addSun(g,pos,size,col=0xffffff){
   const s=new THREE.Sprite(new THREE.SpriteMaterial({map:glow(),color:col,fog:false,depthWrite:false,transparent:true,blending:THREE.AdditiveBlending}));
@@ -278,7 +291,8 @@ function planetTex(kind){
     europa:()=>{x.fillStyle='#ece4d6'; x.fillRect(0,0,512,256); x.strokeStyle='rgba(150,90,60,0.6)'; x.lineWidth=1.5; for(let i=0;i<40;i++){x.beginPath(); let px=rnd()*512,py=rnd()*256; x.moveTo(px,py); for(let k=0;k<6;k++){px+=rr(-60,60); py+=rr(-25,25); x.lineTo(px,py);} x.stroke();}},
     charon:()=>{P.gray(); x.fillStyle='rgba(110,50,40,0.85)'; x.fillRect(0,0,512,40);},
     titan:()=>{x.fillStyle='#d58a35'; x.fillRect(0,0,512,256); for(let y=0;y<256;y+=16){x.fillStyle=`rgba(255,200,120,${rr(0.05,0.15)})`; x.fillRect(0,y,512,8);}},
-    triton:()=>{x.fillStyle='#d9c7c0'; x.fillRect(0,0,512,256); blob('#b88f86',20,6,20,0.6); x.fillStyle='rgba(255,220,220,0.8)'; x.fillRect(0,180,512,76);}
+    triton:()=>{x.fillStyle='#d9c7c0'; x.fillRect(0,0,512,256); blob('#b88f86',20,6,20,0.6); x.fillStyle='rgba(255,220,220,0.8)'; x.fillRect(0,180,512,76);},
+    saturn:()=>{const B=['#e8d6a8','#d9c08a','#cdb27a','#efe2c0','#c9a96e']; for(let y=0;y<256;y+=8){x.fillStyle=B[Math.floor(rnd()*B.length)]; x.fillRect(0,y,512,8);} x.fillStyle='rgba(150,170,190,0.5)'; x.fillRect(0,0,512,22);}
   };
   P[kind](); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t;
 }
@@ -348,8 +362,8 @@ function addCraters(g,n,rimCol,floorCol,minZ=6){
   if(big.length) g.add(inst(mtnGeos[1],new THREE.MeshStandardMaterial({color:rimCol,roughness:1,flatShading:true}),big.length,(o,i)=>{const [x,z,r]=big[i]; o.position.set(x,r*0.035,z); o.scale.set(r*0.16,r*0.08,r*0.16);}));
 }
 function addMountains(g,n,col,rMin,rMax,o2={}){
-  const mat=new THREE.MeshStandardMaterial({color:col,roughness:1,flatShading:true});
-  const capMat=o2.snow?new THREE.MeshStandardMaterial({color:o2.snow,roughness:0.7,flatShading:true}):null;
+  const mat=new THREE.MeshStandardMaterial({color:col,roughness:1,flatShading:true,emissive:col,emissiveIntensity:0.18,side:THREE.DoubleSide});
+  const capMat=o2.snow?new THREE.MeshStandardMaterial({color:o2.snow,roughness:0.7,flatShading:true,emissive:o2.snow,emissiveIntensity:0.15,side:THREE.DoubleSide}):null;
   const per=Math.ceil(n/4), caps=[];
   for(let v=0;v<4;v++) g.add(inst(mtnGeos[v],mat,per,o=>{
     const a=rnd()*Math.PI*2, d=rr(rMin,rMax), w=rr(o2.wMin||120,o2.wMax||340), h=w*rr(o2.hMin||0.35,o2.hMax||0.8), sx=w*(o2.stretch?rr(1.8,3.2):1);
@@ -358,10 +372,10 @@ function addMountains(g,n,col,rMin,rMax,o2={}){
   if(capMat) for(let v=0;v<4;v++){const cs=caps.filter(c=>c[0]===v); g.add(inst(mtnGeos[v],capMat,cs.length,(o,i)=>{const [,x,z,sx,h,w,ry]=cs[i], f=0.36; o.position.set(x,h-3-h*f/2,z); o.scale.set(sx*f*1.04,h*f,w*f*1.04); o.rotation.y=ry;}));}
 }
 function addMesas(g,n,col,rMin,rMax){
-  g.add(inst(mesaGeo,white(),n,o=>{const a=rnd()*Math.PI*2,d=rr(rMin,rMax),w=rr(120,340),h=rr(50,170); o.position.set(300+Math.cos(a)*d,h/2-2,Math.sin(a)*d); o.scale.set(w,h,w*rr(0.6,1)); o.rotation.y=rnd()*3;},c=>c.set(col).multiplyScalar(rr(0.85,1.1))));
+  g.add(inst(mesaGeo,new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,flatShading:true,emissive:col,emissiveIntensity:0.15}),n,o=>{const a=rnd()*Math.PI*2,d=rr(rMin,rMax),w=rr(120,340),h=rr(50,170); o.position.set(300+Math.cos(a)*d,h/2-2,Math.sin(a)*d); o.scale.set(w,h,w*rr(0.6,1)); o.rotation.y=rnd()*3;},c=>c.set(col).multiplyScalar(rr(0.85,1.1))));
 }
 function addHills(g,n,col,rMin,rMax){
-  g.add(inst(new THREE.SphereGeometry(1,24,12),new THREE.MeshStandardMaterial({color:0xffffff,roughness:1}),n,o=>{const a=rnd()*Math.PI*2,d=rr(rMin,rMax),w=rr(150,420); o.position.set(300+Math.cos(a)*d,-w*0.05,Math.sin(a)*d); o.scale.set(w,w*rr(0.15,0.3),w*rr(0.6,1));},c=>c.set(col).multiplyScalar(rr(0.8,1.1))));
+  g.add(inst(new THREE.SphereGeometry(1,32,16),new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,emissive:col,emissiveIntensity:0.12}),n,o=>{const a=rnd()*Math.PI*2,d=rr(rMin,rMax),w=rr(150,420); o.position.set(300+Math.cos(a)*d,-w*0.05,Math.sin(a)*d); o.scale.set(w,w*rr(0.15,0.3),w*rr(0.6,1));},c=>c.set(col).multiplyScalar(rr(0.8,1.1))));
 }
 function addTrees(g,n){
   const T=[]; for(let i=0;i<n;i++){const [x,z]=spotBack(14); T.push([x,z,rr(5,14),rnd()<0.55]);}
@@ -410,7 +424,7 @@ function addRings(g,o2={}){
   m.rotation.x=Math.PI/2-(o2.tilt??0.35); m.position.set(300,o2.y??-600,0); g.add(m);
 }
 function addVolcanoes(g,n){
-  const mat=new THREE.MeshStandardMaterial({color:0x4a3522,roughness:1,flatShading:true}), lava=new THREE.MeshBasicMaterial({color:0xff5a1a,fog:false});
+  const mat=new THREE.MeshStandardMaterial({color:0x4a3522,roughness:1,flatShading:true,emissive:0x4a3522,emissiveIntensity:0.2,side:THREE.DoubleSide}), lava=new THREE.MeshBasicMaterial({color:0xff5a1a,fog:false});
   for(let i=0;i<n;i++){
     const [x,z]=spotBack(380), w=rr(140,260), h=w*rr(0.35,0.5);
     const v=new THREE.Mesh(mtnGeos[i%4],mat); v.position.set(x,h/2-3,z); v.scale.set(w,h,w); g.add(v);
@@ -472,11 +486,11 @@ const BUILD={
   Venus:g=>{addSkyDome(g,0xd9b36a,0xa86f2c,{pow:0.8}); addVolcanoes(g,6); addMountains(g,14,0x6a4a2a,450,850,{hMin:0.2,hMax:0.4}); g.add(inst(new THREE.CylinderGeometry(1,1.05,1,24),new THREE.MeshStandardMaterial({color:0xffffff,roughness:1}),14,o=>{const [x,z]=spotBack(120),w=rr(25,70); o.position.set(x,w*0.06,z); o.scale.set(w,w*0.12,w);},c=>c.set(0x6a4a2a).multiplyScalar(rr(0.8,1.1)))); addRocks(g,450,0x4a3a2a,1.8); addCraters(g,15,0x7a5a36,0x6a4c2c);},
   Earth:g=>{addSkyDome(g,0x9cc9ee,0x3f7fd0); addSun(g,[900,900,-1900],300,0xfff8e0); addHills(g,30,0x5f8a45,800,1400); addTrees(g,500); addSkyClouds(g,35,0xffffff,250,520); addRocks(g,120,0x8a8a86,0.8,8);},
   Moon:g=>{addSkyDome(g,0x05060c,0x000000); addStars(g); addSun(g,[1600,600,-1400],260,0xffffff); addBody(g,70,'earth',[-400,700,-1900]); addMountains(g,20,0x6f6f6c,1300,1800); addCraters(g,240,0xa8a8a4,0x7d7d79); addRocks(g,450,0x8a8a86,2.5);},
-  Mars:g=>{addSkyDome(g,0xd8a27a,0x8f5c44,{pow:0.7}); addSun(g,[900,700,-1800],140,0xfff4e8); addMesas(g,18,0x9a4b2c,1000,1450); const sh=new THREE.Mesh(mtnGeos[0],new THREE.MeshStandardMaterial({color:0xa0522d,roughness:1,flatShading:true})); sh.position.set(-200,60,-1300); sh.scale.set(900,130,900); g.add(sh); addDunes(g,70,0xc0703f,40); addDustDevils(g,3); addCraters(g,50,0xa45a36,0x8e4528); addRocks(g,650,0x7a3a24,2.2);},
+  Mars:g=>{addSkyDome(g,0xd8a27a,0x8f5c44,{pow:0.7}); addSun(g,[900,700,-1800],140,0xfff4e8); addMesas(g,18,0x9a4b2c,1000,1450); const sh=new THREE.Mesh(mtnGeos[0],new THREE.MeshStandardMaterial({color:0xa0522d,roughness:1,flatShading:true,emissive:0xa0522d,emissiveIntensity:0.15,side:THREE.DoubleSide})); sh.position.set(-200,60,-1300); sh.scale.set(900,130,900); g.add(sh); addDunes(g,70,0xc0703f,40); addDustDevils(g,3); addCraters(g,50,0xa45a36,0x8e4528); addRocks(g,650,0x7a3a24,2.2);},
   Phobos:g=>{addSkyDome(g,0x050508,0x000000); addStars(g); addSun(g,[1500,500,-1500],240,0xffffff); addBody(g,900,'mars',[300,700,-2400]); const st=new THREE.Mesh(new THREE.TorusGeometry(600,40,8,64),new THREE.MeshStandardMaterial({color:0x5e5750,roughness:1})); st.rotation.x=Math.PI/2; st.scale.set(1,1,0.4); st.position.set(300,0,-1300); g.add(st); addCraters(g,320,0x5e5750,0x3d3833); addRocks(g,320,0x3f3a35,1.8);},
   Jupiter:g=>{addSkyDome(g,0xd8b48a,0x7a5a3c,{pow:0.7}); addSun(g,[1200,900,-1600],90,0xfff2e0); addBody(g,26,'io',[-600,600,-1900]); addBody(g,22,'europa',[700,900,-2000]); addBands(g,[0xb98a5e,0xe8d2b0,0xa8724a]); addCloudDeck(g,520,[0xf1e2c6,0xd9b48a,0xb88a60],{towers:28}); addSkyClouds(g,18,0xe8d2b0,140,260,2.5,0.6);},
   Saturn:g=>{addSkyDome(g,0xe6cf9a,0xb39a64,{pow:0.7}); addSun(g,[1200,900,-1600],70,0xfff2e0); addRings(g); addBody(g,30,'titan',[-800,500,-1900]); addBands(g,[0xcdb27a,0xe9d9ae]); addCloudDeck(g,460,[0xf2e6c4,0xdcc796,0xe8d8b0],{towers:16});},
-  Titan:g=>{addSkyDome(g,0xc27a2c,0x7a3e10,{pow:0.8}); addMountains(g,14,0x4a3a26,700,1000,{hMin:0.15,hMax:0.32}); addDunes(g,90,0x4a3826,30); addLakes(g,30,0x15181c); g.add(inst(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9}),500,o=>{const s=rr(0.05,0.35),[x,z]=spot(5); o.position.set(x,s*0.4,z); o.scale.set(s,s*0.8,s);},c=>c.set(0xb8a888).multiplyScalar(rr(0.85,1.1)))); addRocks(g,200,0x7a6a52,1.2);},
+  Titan:g=>{addSkyDome(g,0xc27a2c,0x5a2c0c,{pow:0.8}); addSaturnSky(g,[-700,950,-2000],115); addMountains(g,14,0x4a3a26,700,1000,{hMin:0.15,hMax:0.32}); addDunes(g,90,0x4a3826,30); addLakes(g,30,0x15181c); g.add(inst(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9}),500,o=>{const s=rr(0.05,0.35),[x,z]=spot(5); o.position.set(x,s*0.4,z); o.scale.set(s,s*0.8,s);},c=>c.set(0xb8a888).multiplyScalar(rr(0.85,1.1)))); addRocks(g,200,0x7a6a52,1.2);},
   Uranus:g=>{addSkyDome(g,0x9fd6dc,0x4c98a6,{pow:0.7}); addSun(g,[1200,900,-1600],50,0xffffff); addRings(g,{faint:true,col:'110,125,135',tilt:1.25,y:-200,inner:2000,outer:2300}); addBody(g,20,'gray',[-700,600,-2000]); addCloudDeck(g,420,[0xc8f1f4,0xa5e0e6,0xd8f8fa],{towers:10}); addSkyClouds(g,20,0xe8fbfd,160,300,3,0.5);},
   Neptune:g=>{addSkyDome(g,0x3f66c4,0x16296e,{pow:0.7}); addSun(g,[1200,900,-1600],40,0xffffff); addBody(g,24,'triton',[-700,700,-2000]); addCloudDeck(g,380,[0x4a78d8,0x6a90e8,0x2f55b0]); addSkyClouds(g,45,0xffffff,60,220,3.5,0.85);},
   Pluto:g=>{addSkyDome(g,0x1d2c48,0x000000,{pow:0.25}); addStars(g); addSun(g,[1500,500,-2000],70,0xffffff); addBody(g,85,'charon',[-900,500,-2200]); addMountains(g,18,0xd8d2c6,1100,1600,{snow:0xffffff}); addCraters(g,30,0xcab89c,0xb8a68a); addRocks(g,300,0xbfae94,2.0);},

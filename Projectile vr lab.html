@@ -86,6 +86,7 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>Curved ramp (School lab only):</strong> press Launcher on the console to switch from the spring launcher to a curved track. Set the release height Δh (how far the ball drops along the track), the ball’s mass and the bench height, then press Launch: the ball rolls down the track and leaves the end of the bench horizontally. Choose Ball slides (u = √(2gΔh), no friction) or Ball rolls (u = √(10gΔh/7), allowing for the energy in the ball’s spin). Changing the mass makes no difference to the motion, because it cancels out of mgΔh = ½mu².</p>
       <p class="hint"><strong>Bench view (School lab only):</strong> press View until it says Bench to watch side-on with your eyes exactly level with the launch point. A thin red line marks the launch height, so you can see the path rise above it and fall back through it.</p>
       <p class="hint"><strong>Moving the console in VR:</strong> press the Console button at the top of the console to move it Front, Low, Left or Right, or hold the grip button on either controller to pick the console up and put it anywhere. It stays where you leave it as you change views.</p>
+      <p class="hint"><strong>Zooming:</strong> use the + Zoom and − Zoom buttons on the console (or the + and − keys on a computer) to move closer to or further from the flight in any view. On a computer you can also scroll to zoom the camera lens.</p>
       <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
@@ -104,7 +105,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 /* ---------- state & physics ---------- */
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
-const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,sound:true,music:true,scene:2,ramp:false,dh:0.3,m:0.05,roll:false,picker:null,g:9.8,keypad:null};
+const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,zoom:1,sound:true,music:true,scene:2,ramp:false,dh:0.3,m:0.05,roll:false,picker:null,g:9.8,keypad:null};
 // g values: NASA planetary fact sheets (equatorial, incl. rotation; gas giants at the 1-bar level); Titan 1.35, Phobos 0.0057 (mean), Pluto 0.62
 const BODIES=[
   {name:'Mercury',g:3.7,sky:0x020306,fog:[3500,5000],ground:0x8a8178,hemi:[0x8899aa,0x222222,0.5],sun:[0xffffff,3.6],grid:0.14,note:'Mercury: no atmosphere, so this model is very accurate.'},
@@ -115,7 +116,7 @@ const BODIES=[
   {name:'Phobos',g:0.0057,sky:0x010205,fog:[3500,5000],ground:0x4d4741,hemi:[0x8899aa,0x221a14,0.6],sun:[0xffffff,3.0],grid:0.14,note:'Phobos: escape speed ≈ 11 m/s; g varies 0.003–0.007.'},
   {name:'Jupiter',g:23.1,sky:0xd8b48a,fog:[150,1400],ground:0xc9a27a,hemi:[0xfff0d8,0x6a4a2a,1.8],sun:[0xfff2e0,1.0],grid:0.18,note:'Jupiter: no solid surface; g is at the 1-bar cloud level.'},
   {name:'Saturn',g:9.0,sky:0xe6cf9a,fog:[150,1400],ground:0xd6bb84,hemi:[0xfff4dc,0x7a6238,1.8],sun:[0xfff2e0,0.9],grid:0.18,note:'Saturn: no solid surface; g is at the 1-bar cloud level.'},
-  {name:'Titan',g:1.35,sky:0xc27a2c,fog:[90,1000],ground:0x5e4a32,hemi:[0xffc27a,0x2a1e10,1.4],sun:[0xffb060,0.6],grid:0.16,note:'Titan: thick hazy atmosphere; real drag would be large.'},
+  {name:'Titan',g:1.35,sky:0xc27a2c,fog:[90,1000],ground:0x9a7c56,hemi:[0xffd29a,0x5a4428,2.0],sun:[0xffc07a,0.9],grid:0.16,lamp:22,note:'Titan: thick hazy atmosphere; real drag would be large.'},
   {name:'Uranus',g:8.7,sky:0x9fd6dc,fog:[150,1400],ground:0x86c9d0,hemi:[0xeaffff,0x3a6a70,1.8],sun:[0xffffff,0.7],grid:0.18,note:'Uranus: no solid surface; g is at the 1-bar cloud level.'},
   {name:'Neptune',g:11.0,sky:0x3f66c4,fog:[150,1400],ground:0x3459b0,hemi:[0xdfe8ff,0x1a2a5a,1.8],sun:[0xffffff,0.6],grid:0.18,note:'Neptune: no solid surface; g is at the 1-bar cloud level.'},
   {name:'Pluto',g:0.62,sky:0x010205,fog:[3500,5000],ground:0xd6c4aa,hemi:[0x8899aa,0x2a2420,0.7],sun:[0xffffff,2.2],grid:0.14,note:'Pluto: very thin atmosphere; drag is negligible.'},
@@ -197,6 +198,8 @@ camera.position.set(0,1.6,0);
 const dolly=new THREE.Group(); dolly.add(camera); scene.add(dolly);
 
 const hemi=new THREE.HemisphereLight(0xffffff,0x4a6b3a,2.2); scene.add(hemi);
+// soft light that travels with you, used on darker worlds (Titan) to brighten the ground where you stand
+const viewerLamp=new THREE.PointLight(0xffd8a0,0,0,2); viewerLamp.position.set(0,3,0.5); dolly.add(viewerLamp);
 const sun=new THREE.DirectionalLight(0xffffff,2.0); sun.position.set(40,80,30); scene.add(sun);
 
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(8000,8000),new THREE.MeshStandardMaterial({color:0x6f9e57,roughness:1}));
@@ -210,9 +213,10 @@ lane.rotation.x=-Math.PI/2; lane.position.set(600,0.03,0); scene.add(lane);
 let seed=20260;
 const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
 const rr=(a,b)=>a+rnd()*(b-a);
-function spot(minAbsZ){for(;;){const x=-400+rnd()*1600,z=(rnd()*2-1)*800; if(Math.abs(z)>minAbsZ) return [x,z];}}
+// ground clutter (craters, rocks, clouds) only goes BEHIND the line of flight, so nothing sits between you and the path
+function spot(minAbsZ){const x=-400+rnd()*1600; return [x,-(minAbsZ+rnd()*Math.max(1,800-minAbsZ))];}
 // tall scenery goes behind the line of flight (or very far in front) so it never blocks the side view
-function spotBack(minZ){const x=-500+rnd()*1800; return rnd()<0.85?[x,-(minZ+rnd()*(900-minZ))]:[x,450+rnd()*450];}
+function spotBack(minZ){const x=-500+rnd()*1800; return [x,-(minZ+rnd()*(900-minZ))];}
 function inst(geo,mat,n,fn,colFn){
   const m=new THREE.InstancedMesh(geo,mat,Math.max(1,n)), o=new THREE.Object3D(), c=new THREE.Color();
   for(let i=0;i<n;i++){o.position.set(0,0,0); o.rotation.set(0,0,0); o.scale.set(1,1,1); fn(o,i); o.updateMatrix(); m.setMatrixAt(i,o.matrix); if(colFn){colFn(c,i); m.setColorAt(i,c);}}
@@ -490,7 +494,7 @@ const BUILD={
   Phobos:g=>{addSkyDome(g,0x050508,0x000000); addStars(g); addSun(g,[1500,500,-1500],240,0xffffff); addBody(g,900,'mars',[300,700,-2400]); const st=new THREE.Mesh(new THREE.TorusGeometry(600,40,8,64),new THREE.MeshStandardMaterial({color:0x5e5750,roughness:1})); st.rotation.x=Math.PI/2; st.scale.set(1,1,0.4); st.position.set(300,0,-1300); g.add(st); addCraters(g,320,0x5e5750,0x3d3833); addRocks(g,320,0x3f3a35,1.8);},
   Jupiter:g=>{addSkyDome(g,0xd8b48a,0x7a5a3c,{pow:0.7}); addSun(g,[1200,900,-1600],90,0xfff2e0); addBody(g,26,'io',[-600,600,-1900]); addBody(g,22,'europa',[700,900,-2000]); addBands(g,[0xb98a5e,0xe8d2b0,0xa8724a]); addCloudDeck(g,520,[0xf1e2c6,0xd9b48a,0xb88a60],{towers:28}); addSkyClouds(g,18,0xe8d2b0,140,260,2.5,0.6);},
   Saturn:g=>{addSkyDome(g,0xe6cf9a,0xb39a64,{pow:0.7}); addSun(g,[1200,900,-1600],70,0xfff2e0); addRings(g); addBody(g,30,'titan',[-800,500,-1900]); addBands(g,[0xcdb27a,0xe9d9ae]); addCloudDeck(g,460,[0xf2e6c4,0xdcc796,0xe8d8b0],{towers:16});},
-  Titan:g=>{addSkyDome(g,0xc27a2c,0x5a2c0c,{pow:0.8}); addSaturnSky(g,[-700,950,-2000],115); addMountains(g,14,0x4a3a26,700,1000,{hMin:0.15,hMax:0.32}); addDunes(g,90,0x4a3826,30); addLakes(g,30,0x15181c); g.add(inst(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9}),500,o=>{const s=rr(0.05,0.35),[x,z]=spot(5); o.position.set(x,s*0.4,z); o.scale.set(s,s*0.8,s);},c=>c.set(0xb8a888).multiplyScalar(rr(0.85,1.1)))); addRocks(g,200,0x7a6a52,1.2);},
+  Titan:g=>{addSkyDome(g,0xc27a2c,0x5a2c0c,{pow:0.8}); addSaturnSky(g,[-700,950,-2000],115); addMountains(g,14,0x4a3a26,700,1000,{hMin:0.15,hMax:0.32}); addDunes(g,90,0x6e5638,30); addLakes(g,30,0x15181c); g.add(inst(new THREE.SphereGeometry(1,10,8),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9}),500,o=>{const s=rr(0.05,0.35),[x,z]=spot(5); o.position.set(x,s*0.4,z); o.scale.set(s,s*0.8,s);},c=>c.set(0xb8a888).multiplyScalar(rr(0.85,1.1)))); addRocks(g,200,0x7a6a52,1.2);},
   Uranus:g=>{addSkyDome(g,0x9fd6dc,0x4c98a6,{pow:0.7}); addSun(g,[1200,900,-1600],50,0xffffff); addRings(g,{faint:true,col:'110,125,135',tilt:1.25,y:-200,inner:2000,outer:2300}); addBody(g,20,'gray',[-700,600,-2000]); addCloudDeck(g,420,[0xc8f1f4,0xa5e0e6,0xd8f8fa],{towers:10}); addSkyClouds(g,20,0xe8fbfd,160,300,3,0.5);},
   Neptune:g=>{addSkyDome(g,0x3f66c4,0x16296e,{pow:0.7}); addSun(g,[1200,900,-1600],40,0xffffff); addBody(g,24,'triton',[-700,700,-2000]); addCloudDeck(g,380,[0x4a78d8,0x6a90e8,0x2f55b0]); addSkyClouds(g,45,0xffffff,60,220,3.5,0.85);},
   Pluto:g=>{addSkyDome(g,0x1d2c48,0x000000,{pow:0.25}); addStars(g); addSun(g,[1500,500,-2000],70,0xffffff); addBody(g,85,'charon',[-900,500,-2200]); addMountains(g,18,0xd8d2c6,1100,1600,{snow:0xffffff}); addCraters(g,30,0xcab89c,0xb8a68a); addRocks(g,300,0xbfae94,2.0);},
@@ -533,7 +537,7 @@ function applyScene(){
   scene.background.set(b.sky); scene.fog.color.set(b.sky); scene.fog.near=b.fog[0]; scene.fog.far=b.fog[1];
   ground.material.color.set(b.ground); ground.material.map=groundTex(GROUND_KIND[b.name]||'regolith'); ground.material.needsUpdate=true;
   hemi.color.set(b.hemi[0]); hemi.groundColor.set(b.hemi[1]); hemi.intensity=b.hemi[2];
-  sun.color.set(b.sun[0]); sun.intensity=b.sun[1];
+  sun.color.set(b.sun[0]); sun.intensity=b.sun[1]; viewerLamp.intensity=b.lamp||0;
   grid.material.opacity=b.grid;
   const lab=!!b.lab;
   distMarks.visible=!lab; grid.visible=!lab; lane.scale.y=lab?0.12:1; POLE_X=lab?0.15:-4; POLE_Z=lab?-0.5:0;
@@ -851,21 +855,24 @@ function applyView(){
   if(v==='Side'){
     const x0=(lab&&S.ramp)?-rampL():0, span=R-x0;
     const D=lab?clamp(0.62*Math.max(span,1.7*H),1.2,3.6):clamp(0.62*Math.max(R,1.7*H),9,3000);
-    dolly.position.set((x0+R)/2,0,D); dolly.rotation.y=0; lookYaw=0; lookPitch=Math.atan2(H*0.5-1.6,D);
+    const Dz=lab?clamp(D/S.zoom,0.4,3.8):Math.max(D/S.zoom,2);
+    dolly.position.set((x0+R)/2,0,Dz); dolly.rotation.y=0; lookYaw=0; lookPitch=Math.atan2(H*0.5-1.6,Dz);
   }else if(v==='Launcher'){
     if(lab) dolly.position.set(-0.4,0,0.9); else dolly.position.set(-1.2,S.h,1.1);
+    dolly.position.x+=(1-1/S.zoom)*R*0.5; if(lab) dolly.position.x=clamp(dolly.position.x,-2.8,12.5);
     dolly.rotation.y=-Math.PI/2; lookYaw=0.06;
     lookPitch=clamp(Math.atan2(H-S.h,R*0.5),-0.3,0.6)*0.6;
   }else if(v==='Bench'){
     // side-on with your eyes level with the launch point (bench height)
     const x0=S.ramp?-rampL():0, span=R-x0;
-    const D=clamp(0.62*Math.max(span,1.7*H),1.2,3.6);
+    const D=clamp(clamp(0.62*Math.max(span,1.7*H),1.2,3.6)/S.zoom,0.4,3.8);
     const eye=(renderer.xr.isPresenting&&camera.position.y>0.3)?camera.position.y:1.6;
     dolly.position.set(Math.max((x0+R)/2,0.6+x0),S.h-eye,D); dolly.rotation.y=0; lookYaw=0; lookPitch=0;
   }else if(v==='Follow'){
     const L=live(); dolly.position.set(L.x,Math.max(0,L.y-1.4),followDist()); dolly.rotation.y=0; lookYaw=0; lookPitch=-0.03;
   }else{
     if(lab) dolly.position.set(R+0.8,0,0.8); else dolly.position.set(R+Math.max(4,R*0.06),0,3);
+    dolly.position.x-=(1-1/S.zoom)*R*0.5; if(lab) dolly.position.x=clamp(dolly.position.x,-2.8,12.5);
     dolly.rotation.y=Math.PI/2; lookYaw=-0.05;
     lookPitch=Math.atan2(H*0.6,R*0.6);
   }
@@ -877,7 +884,7 @@ const benchLine=new THREE.Mesh(new THREE.BoxGeometry(12,0.004,0.004),new THREE.M
 benchLine.visible=false; scene.add(benchLine);
 let benchFixFrames=0;
 function updateDesktopCam(){if(!renderer.xr.isPresenting){camera.position.set(0,1.6,0);camera.rotation.set(lookPitch,lookYaw,0);}}
-function followDist(){const p=flight||predict(); return isLab()?clamp(0.25*Math.max(p.R,p.H,1),0.6,2.5):clamp(0.06*Math.max(p.R,p.H,20),4,80);}
+function followDist(){const p=flight||predict(); return (isLab()?clamp(0.25*Math.max(p.R,p.H,1),0.6,2.5):clamp(0.06*Math.max(p.R,p.H,20),4,80))/S.zoom;}
 const followTarget=new THREE.Vector3();
 
 /* ---------- console panel (canvas: DOM on desktop, texture in VR) ---------- */
@@ -1022,12 +1029,14 @@ function drawPanel(){
   else button('ts',250,380,406,54,TS_LABEL[S.tsi]+'  ↻','normal',24);
   [['vectors','Vectors'],['proj','Projections'],['markers','Time dots'],['answers','Answers']]
     .forEach(([k,l],i)=>button(k,30+i*157,456,149,56,(S[k]?'✓ ':'')+l,S[k]?'on':'off',22));
-  button('launch',30,530,200,96,'Launch','primary',36);
+  button('launch',30,530,170,96,'Launch','primary',34);
   const canPause=(flight&&!flight.done)||!!rampRun, canInspect=flight&&flight.done&&flight.T>0;
-  if(canInspect) button('inspect',240,530,140,96,'🔍 Inspect','normal',22);
-  else button('pause',240,530,140,96,S.paused&&canPause?'▶ Resume':'⏸ Pause',S.paused&&canPause?'on':'normal',23);
-  button('clear',390,530,130,96,'Clear\ntrails','normal',23);
-  button('view',530,530,126,96,'View\n'+VIEWS[S.viewIdx],'normal',22);
+  if(canInspect) button('inspect',210,530,122,96,'🔍 Inspect','normal',19);
+  else button('pause',210,530,122,96,S.paused&&canPause?'▶ Resume':'⏸ Pause',S.paused&&canPause?'on':'normal',20);
+  button('clear',342,530,100,96,'Clear\ntrails','normal',20);
+  button('view',452,530,114,96,'View\n'+VIEWS[S.viewIdx],'normal',20);
+  button('zoomin',576,530,80,46,'+ Zoom','normal',17);
+  button('zoomout',576,580,80,46,'− Zoom','normal',17);
 
   font(22,'600'); ctx.fillStyle='#c9d4e3'; ctx.fillText('Arrows',30,672);
   let lx=118;
@@ -1142,6 +1151,8 @@ function act(id){
     case 'quitno': S.confirmQuit=false; break;
     case 'quityes': quit(); return;
     case 'panelpos': panelIdx=panelCustom?panelIdx:(panelIdx+1)%PANEL_POS.length; placePanel(); break;
+    case 'zoomin': S.zoom=clamp(S.zoom*1.4,0.25,8); applyView(); break;
+    case 'zoomout': S.zoom=clamp(S.zoom/1.4,0.25,8); applyView(); break;
     case 'music': S.music=!S.music; startMusic(); break;
     case 'sound': S.sound=!S.sound; setMute(); break;
     case 'launch': launch(); break;
@@ -1176,6 +1187,7 @@ window.addEventListener('keydown',e=>{
   }
   if(e.key==='Escape'&&S.confirmQuit){act('quitno');return;}
   if(e.key==='Escape'&&S.picker){act('pickcancel');return;}
+  if(!S.inspect&&!S.keypad&&!S.picker&&!S.confirmQuit&&(e.key==='+'||e.key==='='||e.key==='-')){act(e.key==='-'?'zoomout':'zoomin');return;}
   if((e.key==='p'||e.key==='P')&&!S.picker&&!S.confirmQuit){act('pause');return;}
   if(e.code==='Space'&&e.target.tagName!=='BUTTON'){e.preventDefault();act('launch');}
 });

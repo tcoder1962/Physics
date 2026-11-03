@@ -87,6 +87,7 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>Bench view (School lab only):</strong> press View until it says Bench to watch side-on with your eyes exactly level with the launch point. A thin red line marks the launch height, so you can see the path rise above it and fall back through it.</p>
       <p class="hint"><strong>Moving the console in VR:</strong> press the Console button at the top of the console to move it Front, Low, Left or Right, or hold the grip button on either controller to pick the console up and put it anywhere. It stays where you leave it as you change views.</p>
       <p class="hint"><strong>Zooming:</strong> use the + Zoom and − Zoom buttons on the console (or the + and − keys on a computer) to move closer to or further from the flight in any view. On a computer you can also scroll to zoom the camera lens.</p>
+      <p class="hint"><strong>Moving around:</strong> in VR, push the left thumbstick to walk, push the right thumbstick left or right to turn and up or down to rise or sink, or hold A or X, point at the ground and let go to teleport there. On a computer, use W A S D to walk and Q / E to go down and up. The View button then says Free; press it to jump back to the chosen view.</p>
       <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
@@ -105,7 +106,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 /* ---------- state & physics ---------- */
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
-const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,zoom:1,sound:true,music:true,scene:2,ramp:false,dh:0.3,m:0.05,roll:false,picker:null,g:9.8,keypad:null};
+const S={u:20,angle:45,h:0,gi:2,tsi:0,vectors:true,proj:true,markers:true,answers:true,viewIdx:0,zoom:1,moved:false,sound:true,music:true,scene:2,ramp:false,dh:0.3,m:0.05,roll:false,picker:null,g:9.8,keypad:null};
 // g values: NASA planetary fact sheets (equatorial, incl. rotation; gas giants at the 1-bar level); Titan 1.35, Phobos 0.0057 (mean), Pluto 0.62
 const BODIES=[
   {name:'Mercury',g:3.7,sky:0x020306,fog:[3500,5000],ground:0x8a8178,hemi:[0x8899aa,0x222222,0.5],sun:[0xffffff,3.6],grid:0.14,note:'Mercury: no atmosphere, so this model is very accurate.'},
@@ -784,7 +785,7 @@ function startRamp(){
   const sp=y=>Math.sqrt(Math.max(0,c*2*g*(y0-y)));
   for(let i=1;i<pts.length;i++){const ds=pts[i].distanceTo(pts[i-1]), v=(sp(pts[i-1].y)+sp(pts[i].y))/2; times.push(times[i-1]+ds/Math.max(v,1e-4));}
   rampRun={pts,times,t:0,total:times[times.length-1],sp};
-  startWhoosh(); applyView(); drawPanel();
+  startWhoosh(); if(!S.moved) applyView(); drawPanel();
 }
 function stepRamp(dt){
   rampRun.t+=dt*TS[S.tsi];
@@ -804,7 +805,7 @@ function startFlight(fromRamp){
   addPoint(tr,0,S.h);
   if(!fromRamp) replay(boomSnd); if(p.T>0) startWhoosh();
   if(p.T<=0){flight.done=true; tr.info=trailInfo(flight,'range 0.0 m');}
-  lastMarkDt=Number(markDt.toPrecision(3)); applyToggles(); applyView(); drawPanel();
+  lastMarkDt=Number(markDt.toPrecision(3)); applyToggles(); if(!S.moved) applyView(); drawPanel();
 }
 function stepFlight(dt){
   const f=flight; f.t+=dt*TS[S.tsi];
@@ -845,12 +846,13 @@ function onParams(){
   rebuildPole(Math.max(p.H,flight?flight.H:0,(labM&&S.ramp)?S.h+S.dh:0));
   landRing.position.set(p.R,0.06,0); landRing.scale.setScalar(labM?0.06:vis);
   benchLine.position.set(6,S.h,0);
-  if(VIEWS[S.viewIdx]==='Bench'&&typeof dolly!=='undefined') applyView();
+  if(VIEWS[S.viewIdx]==='Bench'&&typeof dolly!=='undefined'&&!S.moved) applyView();
   ball.scale.setScalar(vis); poleDot.scale.setScalar(vis); groundDot.scale.setScalar(vis);
 }
 
 /* ---------- viewpoints ---------- */
 function applyView(){
+  S.moved=false;
   const lab=isLab(), p=predict(), R=Math.max(p.R,lab?1:6), H=Math.max(p.H,lab?0.5:3), v=VIEWS[S.viewIdx];
   if(v==='Side'){
     const x0=(lab&&S.ramp)?-rampL():0, span=R-x0;
@@ -1034,7 +1036,7 @@ function drawPanel(){
   if(canInspect) button('inspect',210,530,122,96,'🔍 Inspect','normal',19);
   else button('pause',210,530,122,96,S.paused&&canPause?'▶ Resume':'⏸ Pause',S.paused&&canPause?'on':'normal',20);
   button('clear',342,530,100,96,'Clear\ntrails','normal',20);
-  button('view',452,530,114,96,'View\n'+VIEWS[S.viewIdx],'normal',20);
+  button('view',452,530,114,96,'View\n'+(S.moved?'Free':VIEWS[S.viewIdx]),S.moved?'on':'normal',20);
   button('zoomin',576,530,80,46,'+ Zoom','normal',17);
   button('zoomout',576,580,80,46,'− Zoom','normal',17);
 
@@ -1157,7 +1159,7 @@ function act(id){
     case 'sound': S.sound=!S.sound; setMute(); break;
     case 'launch': launch(); break;
     case 'clear': clearTrails(); onParams(); break;
-    case 'view': do{S.viewIdx=(S.viewIdx+1)%VIEWS.length;}while(VIEWS[S.viewIdx]==='Bench'&&!isLab()); applyView(); break;
+    case 'view': if(!S.moved){do{S.viewIdx=(S.viewIdx+1)%VIEWS.length;}while(VIEWS[S.viewIdx]==='Bench'&&!isLab());} applyView(); break;
   }
   applyToggles(); drawPanel();
 }
@@ -1212,6 +1214,65 @@ for(let i=0;i<2;i++){
   dolly.add(c); ctrls.push(c);
 }
 const ray=new THREE.Raycaster(), rotM=new THREE.Matrix4();
+/* ---------- moving around freely ----------
+   VR: left thumbstick walks, right thumbstick left/right snap-turns and up/down flies,
+   hold A or X to aim a teleport at the ground and release to jump there.
+   Computer: W A S D (or arrow keys when not inspecting) to walk, Q / E to go down / up. */
+const mvFwd=new THREE.Vector3(), mvRight=new THREE.Vector3(), mvA=new THREE.Vector3(), mvB=new THREE.Vector3();
+const tpRing=new THREE.Mesh(new THREE.RingGeometry(0.7,1,40),new THREE.MeshBasicMaterial({color:0x7fe0c4,transparent:true,opacity:0.85,side:THREE.DoubleSide,depthTest:false}));
+tpRing.rotation.x=-Math.PI/2; tpRing.renderOrder=998; tpRing.visible=false; scene.add(tpRing);
+const tpPoint=new THREE.Vector3(); let tpCtrl=null;
+function moveSpeed(){const p=predict(); return isLab()?1.5:Math.max(4,Math.max(p.R,p.H)*0.15);}
+function markMoved(){if(!S.moved){S.moved=true; drawPanel();}}
+function keepInBounds(){
+  if(isLab()){dolly.position.x=clamp(dolly.position.x,-2.7,12.7); dolly.position.z=clamp(dolly.position.z,-3.7,3.7); dolly.position.y=clamp(dolly.position.y,-1.4,1.2);}
+  else dolly.position.y=clamp(dolly.position.y,-1.4,3000);
+}
+function walk(fx,sx,up,dt){
+  camera.getWorldDirection(mvFwd); mvFwd.y=0; if(mvFwd.lengthSq()<1e-6) mvFwd.set(0,0,-1); mvFwd.normalize();
+  mvRight.crossVectors(mvFwd,UP).normalize();
+  const sp=moveSpeed()*dt;
+  dolly.position.addScaledVector(mvFwd,fx*sp).addScaledVector(mvRight,sx*sp); dolly.position.y+=up*sp*0.6;
+  keepInBounds(); markMoved();
+}
+function snapTurn(a){
+  camera.getWorldPosition(mvA); dolly.rotation.y+=a; dolly.updateMatrixWorld(true); camera.getWorldPosition(mvB);
+  dolly.position.x+=mvA.x-mvB.x; dolly.position.z+=mvA.z-mvB.z; markMoved();
+}
+function locomotion(dt){
+  let aiming=null;
+  for(const c of ctrls){
+    const src=c.userData.src; if(!src||!src.gamepad||src.hand) continue;
+    const ax=src.gamepad.axes, bt=src.gamepad.buttons, x=ax[2]||0, y=ax[3]||0;
+    if(src.handedness==='left'){ if(Math.abs(x)>0.15||Math.abs(y)>0.15) walk(-y,x,0,dt); }
+    else{
+      if(Math.abs(x)>0.6){ if(!c.userData.turned){snapTurn(x>0?-Math.PI/6:Math.PI/6); c.userData.turned=true;} } else if(Math.abs(x)<0.3) c.userData.turned=false;
+      if(Math.abs(y)>0.3&&Math.abs(x)<0.6) walk(0,0,-y,dt);
+    }
+    if(bt[4]&&bt[4].pressed) aiming=c;
+  }
+  // teleport: aim while A/X is held, jump on release
+  if(aiming){
+    rotM.identity().extractRotation(aiming.matrixWorld); mvA.setFromMatrixPosition(aiming.matrixWorld); mvB.set(0,0,-1).applyMatrix4(rotM);
+    if(mvB.y<-0.02){
+      const t=-mvA.y/mvB.y; tpPoint.copy(mvA).addScaledVector(mvB,Math.min(t,3000)); tpPoint.y=0;
+      if(isLab()){tpPoint.x=clamp(tpPoint.x,-2.7,12.7); tpPoint.z=clamp(tpPoint.z,-3.7,3.7);}
+      tpRing.position.set(tpPoint.x,0.05,tpPoint.z); tpRing.scale.setScalar(clamp(mvA.distanceTo(tpPoint)*0.02,isLab()?0.15:0.4,40)); tpRing.visible=true; tpCtrl=aiming;
+    } else {tpRing.visible=false; tpCtrl=aiming;}
+  } else if(tpCtrl){
+    if(tpRing.visible){camera.getWorldPosition(mvA); dolly.position.x+=tpPoint.x-mvA.x; dolly.position.z+=tpPoint.z-mvA.z; dolly.position.y=0; keepInBounds(); markMoved(); pulse(tpCtrl);}
+    tpRing.visible=false; tpCtrl=null;
+  }
+}
+const keysHeld=new Set();
+window.addEventListener('keydown',e=>{if(S.keypad||S.picker||S.confirmQuit) return; const k=e.key.toLowerCase(); if('wasdqe'.includes(k)&&k.length===1) keysHeld.add(k);});
+window.addEventListener('keyup',e=>keysHeld.delete(e.key.toLowerCase()));
+window.addEventListener('blur',()=>keysHeld.clear());
+function desktopMove(dt){
+  if(!keysHeld.size) return;
+  const f=(keysHeld.has('w')?1:0)-(keysHeld.has('s')?1:0), s=(keysHeld.has('d')?1:0)-(keysHeld.has('a')?1:0), u=(keysHeld.has('e')?1:0)-(keysHeld.has('q')?1:0);
+  if(f||s||u) walk(f,s,u,dt);
+}
 function updateControllers(){
   dolly.updateMatrixWorld(true);
   let changed=false;
@@ -1268,7 +1329,7 @@ function loop(){
   const L=live();
   ball.position.set(L.x,L.y,0);
   if(((flight&&!flight.done)||rampRun)&&whoosh.isPlaying) updateWhoosh(L);
-  if(VIEWS[S.viewIdx]==='Follow'&&!S.inspect){
+  if(VIEWS[S.viewIdx]==='Follow'&&!S.inspect&&!S.moved){
     followTarget.set(L.x,Math.max(0,L.y-1.4),followDist());
     dolly.position.lerp(followTarget,1-Math.exp(-dt*6));
   }
@@ -1296,7 +1357,7 @@ function loop(){
     const th=Math.max(camPos.distanceTo(tag.position)*0.1,isLab()?0.08:0.2);
     tag.scale.set(th*TAG_W/TAG_H,th,1);
   }else tagStatus='';
-  if(renderer.xr.isPresenting) updateControllers();
+  if(renderer.xr.isPresenting){locomotion(dt); updateControllers();} else desktopMove(dt);
   renderer.render(scene,camera);
 }
 renderer.setAnimationLoop(loop);

@@ -87,7 +87,7 @@ aside{width:min(580px,46%);padding:14px;overflow:auto;background:var(--surface);
       <p class="hint"><strong>Bench view (School lab only):</strong> press View until it says Bench to watch side-on with your eyes exactly level with the launch point. A thin red line marks the launch height, so you can see the path rise above it and fall back through it.</p>
       <p class="hint"><strong>Moving the console in VR:</strong> press the Console button at the top of the console to move it Front, Low, Left or Right, or hold the grip button on either controller to pick the console up and put it anywhere. It stays where you leave it as you change views.</p>
       <p class="hint"><strong>Zooming:</strong> use the + Zoom and − Zoom buttons on the console (or the + and − keys on a computer) to move closer to or further from the flight in any view. On a computer you can also scroll to zoom the camera lens.</p>
-      <p class="hint"><strong>Moving around:</strong> in VR, push the left thumbstick to walk, push the right thumbstick left or right to turn and up or down to rise or sink, or hold A or X, point at the ground and let go to teleport there. On a computer, use W A S D to walk and Q / E to go down and up. The View button then says Free; press it to jump back to the chosen view.</p>
+      <p class="hint"><strong>Moving around:</strong> in VR, push the left thumbstick to walk, push the right thumbstick left or right to turn smoothly (further for faster) and up or down to rise or sink, or hold A or X, point at the ground and let go to teleport there. On a computer, use W A S D to walk and Q / E to go down and up. The View button then says Free; press it to jump back to the chosen view.</p>
       <p class="hint"><strong>Follow view:</strong> press View until it says Follow and the camera travels alongside the ball, so you can watch the velocity arrows change up close. In VR this moves you through the air with the ball, which some people find uncomfortable; switch back to Side view if it feels too much.</p>
       <p class="hint"><strong>Try this:</strong> turn <em>Answers</em> off, calculate the range and time of flight on paper, then launch to check. Compare 30° and 60° at the same speed, then add launch height and see what changes.</p>
     </aside>
@@ -1246,8 +1246,9 @@ function locomotion(dt){
     const ax=src.gamepad.axes, bt=src.gamepad.buttons, x=ax[2]||0, y=ax[3]||0;
     if(src.handedness==='left'){ if(Math.abs(x)>0.15||Math.abs(y)>0.15) walk(-y,x,0,dt); }
     else{
-      if(Math.abs(x)>0.6){ if(!c.userData.turned){snapTurn(x>0?-Math.PI/6:Math.PI/6); c.userData.turned=true;} } else if(Math.abs(x)<0.3) c.userData.turned=false;
-      if(Math.abs(y)>0.3&&Math.abs(x)<0.6) walk(0,0,-y,dt);
+      // smooth turning: speed grows gently with how far the stick is pushed (up to about 100° per second)
+      if(Math.abs(x)>0.12){const k=(Math.abs(x)-0.12)/0.88; snapTurn(-Math.sign(x)*Math.pow(k,1.6)*1.75*dt);}
+      if(Math.abs(y)>0.3) walk(0,0,-y,dt);
     }
     if(bt[4]&&bt[4].pressed) aiming=c;
   }

@@ -117,7 +117,12 @@ summary{cursor:pointer;font:600 17px "Bricolage Grotesque",system-ui,sans-serif}
 #math .src{color:var(--ink-2);font-size:13.5px;margin:6px 0 0}
 
 /* ---------- overlays ---------- */
-#topbar{position:fixed;right:16px;top:calc(16px + env(safe-area-inset-top,0px));display:flex;gap:8px;align-items:center;z-index:6}
+#topbar{position:fixed;right:16px;top:calc(16px + env(safe-area-inset-top,0px));display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:center;z-index:6;max-width:calc(100vw - 404px)}
+.quit{border:1.5px solid var(--line);background:var(--chip);border-radius:999px;padding:8px 16px;font-weight:800;cursor:pointer;box-shadow:var(--shadow)}
+.quit:hover{border-color:var(--magenta);color:var(--magenta)}
+#camHint{position:fixed;right:16px;top:calc(124px + env(safe-area-inset-top,0px));max-width:300px;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);z-index:5;font-size:14px;color:var(--ink-2)}
+#camHint p{margin:2px 0}
+#camHint b{color:var(--ink)}
 #topbar .seg{box-shadow:var(--shadow)}
 .round{width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line);background:var(--chip);font-weight:800;font-size:18px;cursor:pointer;box-shadow:var(--shadow)}
 .vr{border:2px solid #14213D;background:var(--yellow);color:#14213D;border-radius:999px;padding:8px 16px;font-weight:800;cursor:pointer;box-shadow:var(--shadow);display:flex;align-items:center;gap:8px}
@@ -163,16 +168,18 @@ dialog .close{float:right;border:1.5px solid var(--line);background:var(--chip);
   .wordmark p{display:none}
   .fire-mini{display:block;border:2px solid #14213D;background:var(--yellow);color:#14213D;border-radius:999px;padding:7px 16px;font-weight:800;cursor:pointer}
   .sheet-toggle{display:block;border:1.5px solid var(--line);background:var(--chip);border-radius:10px;padding:7px 10px;font-weight:700;font-size:14px;cursor:pointer}
-  #topbar{right:10px;top:calc(10px + env(safe-area-inset-top,0px))}
+  #topbar{right:10px;left:10px;max-width:none;top:calc(10px + env(safe-area-inset-top,0px))}
+  .quit{padding:7px 12px}
+  #camHint{right:10px;left:10px;max-width:none;top:calc(106px + env(safe-area-inset-top,0px));font-size:13px}
   #topbar .seg button{padding:5px 8px;font-size:13px}
   .vr{padding:7px 12px}
-  .result{left:10px;right:10px;bottom:auto;top:calc(62px + env(safe-area-inset-top,0px));max-width:none;padding:8px 12px}
+  .result{left:10px;right:10px;bottom:auto;top:calc(106px + env(safe-area-inset-top,0px));max-width:none;padding:8px 12px}
   .result strong{font-size:17px}
   .result div{font-size:14px}
   #hud{right:10px;bottom:calc(var(--sheet-h,48vh) + 10px);padding:6px 10px;font-size:13px}
   .legend{display:none}
 }
-@media (min-width:900px) and (max-width:1139px){.result{bottom:auto;top:calc(72px + env(safe-area-inset-top,0px))}}
+@media (min-width:900px) and (max-width:1139px){.result{bottom:auto;top:calc(120px + env(safe-area-inset-top,0px))}}
 @media (prefers-reduced-motion:reduce){.result.pop{animation:none}}
 </style>
 </head>
@@ -264,12 +271,14 @@ dialog .close{float:right;border:1.5px solid var(--line);background:var(--chip);
 </aside>
 
 <div id="topbar">
-  <div class="seg" id="camSeg" aria-label="Camera">
-    <button data-cam="side">Side</button><button data-cam="behind">Behind</button><button data-cam="follow">Follow</button>
+  <div class="seg" id="camSeg" aria-label="Camera view">
+    <button data-cam="side" title="Side view (key 1)">Side</button><button data-cam="launch" title="From behind the cannon (key 2)">Launch</button><button data-cam="target" title="From the far end, looking back (key 3)">Target</button><button data-cam="follow" title="Follow the ball (key 4)">Follow</button><button data-cam="free" title="Move around freely (key 5)">Free</button>
   </div>
   <button class="round" id="helpBtn" aria-label="How to play">?</button>
   <button class="vr" id="vrBtn"><svg viewBox="0 0 22 14" aria-hidden="true"><path d="M2 2h18v10h-6l-3-3-3 3H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span id="vrLabel">Play in VR</span></button>
+  <button class="quit" id="quitBtn" title="Leave the game and go back to the list of labs">Quit</button>
 </div>
+<div id="camHint" hidden></div>
 
 <div id="result" class="result" aria-live="polite"><strong id="resTitle"></strong><div id="resLines"></div></div>
 
@@ -307,7 +316,19 @@ dialog .close{float:right;border:1.5px solid var(--line);background:var(--chip);
     <b>← / →</b><span>Speed</span>
     <b>N</b><span>New target or problem</span>
     <b>C</b><span>Clear trails</span>
+    <b>1 – 5</b><span>Change view: Side, Launch, Target, Follow, Free</span>
+    <b>W A S D</b><span>Move around (switches to the Free view)</span>
+    <b>Q / E</b><span>Move down or up in the Free view. Hold Shift to go faster.</span>
   </div>
+  <h3>Views</h3>
+  <div class="ctrl-table">
+    <b>Side</b><span>Looks across the range, so you see the whole path</span>
+    <b>Launch</b><span>From behind the cannon, looking down the range</span>
+    <b>Target</b><span>From the far end, looking back at the cannon</span>
+    <b>Follow</b><span>Travels beside the ball while it flies</span>
+    <b>Free</b><span>Go anywhere. Drag to look around, right-drag or Shift-drag to slide, and scroll to zoom. On a touch screen, drag with one finger to look around, and use two fingers to move and zoom. Dragging the 3D view in any other view switches to Free.</span>
+  </div>
+  <p><b>Quit</b> takes you back to the list of labs.</p>
   <h3 id="vrHelp">Play on Meta Quest 3</h3>
   <ol>
     <li>Put on the headset and open the <b>Meta Quest Browser</b>.</li>
@@ -324,6 +345,10 @@ dialog .close{float:right;border:1.5px solid var(--line);background:var(--chip);
     <b>Stick while moving</b><span>Push the panel further away or pull it closer</span>
     <b>Y (left hand)</b><span>Bring the panel in front of you</span>
     <b>Grip elsewhere</b><span>Grab a ball, swing and let go to throw it. The game measures your throw and shows how far it would go on other planets.</span>
+    <b>Stand at</b><span>Panel buttons that take you to the cannon (Launch), beside the range (Side) or the far end (Target)</span>
+    <b>Hold X</b><span>Point at the ground with your left controller, then let go to move there</span>
+    <b>Right stick sideways</b><span>Turn 30° left or right</span>
+    <b>Quit VR</b><span>Panel button that takes off VR and returns to the normal page</span>
   </div>
   <p id="vrStatus"></p>
   <p>Jupiter has no solid surface, so its “ground” is make-believe. Air resistance is ignored everywhere.</p>
@@ -494,7 +519,7 @@ function updateCannonHeight(){
     towerEdge.scale.set(5.25,0.08,4.65); towerEdge.position.set(0.9,floor-0.03,0.7);
   }
   sandbags.visible=floor<=0.01;
-  rig.position.set(1.8,floor,1.3);
+  if(vrView==='launch') placeRig('launch');
   updateHeightRuler(h);
 }
 
@@ -965,7 +990,57 @@ function frameExtent(){
   for(const s of shots){ L=Math.max(L,s.extL); Hm=Math.max(Hm,s.extH); }
   return {L,Hm};
 }
+function targetZ(){
+  if(state.mode==='target') return state.targetDist;
+  if(state.mode==='falling') return fall.D;
+  if(state.mode==='predict') return state.predictDone&&state.lastCannon?state.lastCannon.R:40;
+  const p=P(); return Math.max(10,solve(p.a,p.v,p.h,p.g).R);
+}
+/* ---------- free camera: orbit around a point that can be moved anywhere ---------- */
+const free={target:new V3(0,5,-20),yaw:1.2,pitch:0.3,dist:60};
+const keys=new Set();
+const isTouch=matchMedia('(pointer:coarse)').matches;
+let hintTimer=0;
+function showCamHint(on){
+  const el=$('#camHint'); clearTimeout(hintTimer);
+  if(!on){ el.hidden=true; return; }
+  el.innerHTML=isTouch
+    ?'<p><b>Free view.</b> Drag with one finger to look around.</p><p>Pinch to zoom, and drag with two fingers to move.</p>'
+    :'<p><b>Free view.</b> Drag to look around. Right-drag or Shift-drag to slide.</p><p>Scroll to zoom. <b>W A S D</b> to move, <b>Q / E</b> down and up, Shift for speed.</p>';
+  el.hidden=false; hintTimer=setTimeout(()=>{ el.hidden=true; },9000);
+}
+function setCam(c){
+  if(c==='free' && state.cam!=='free'){
+    const off=camPos.clone().sub(camLook); free.dist=clamp(off.length(),2,3000);
+    free.target.copy(camLook); free.yaw=Math.atan2(off.x,off.z); free.pitch=Math.asin(clamp(off.y/free.dist,-1,1));
+  }
+  state.cam=c; zoom=1; syncUI(); showCamHint(c==='free');
+}
+function panBy(dx,dy){
+  const k=free.dist*0.0016;
+  const r=new V3().setFromMatrixColumn(desktopCam.matrixWorld,0), u=new V3().setFromMatrixColumn(desktopCam.matrixWorld,1);
+  free.target.addScaledVector(r,-dx*k).addScaledVector(u,dy*k); free.target.y=Math.max(0,free.target.y);
+}
+function moveFreeKeys(dt){
+  let fx=0,fz=0,fy=0;
+  if(keys.has('KeyW')) fz++; if(keys.has('KeyS')) fz--; if(keys.has('KeyD')) fx++; if(keys.has('KeyA')) fx--;
+  if(keys.has('KeyE')) fy++; if(keys.has('KeyQ')) fy--;
+  if(!fx&&!fz&&!fy) return;
+  const sp=Math.max(6,free.dist*0.9)*(keys.has('ShiftLeft')||keys.has('ShiftRight')?3:1)*dt;
+  const sy=Math.sin(free.yaw), cy=Math.cos(free.yaw);
+  free.target.x+=(-sy*fz+cy*fx)*sp; free.target.z+=(-cy*fz-sy*fx)*sp;
+  free.target.y=Math.max(0,free.target.y+fy*sp);
+}
 function updateDesktopCam(dt){
+  if(state.cam==='free'){
+    moveFreeKeys(dt);
+    const cp=Math.cos(free.pitch);
+    camPos.set(free.target.x+free.dist*Math.sin(free.yaw)*cp,free.target.y+free.dist*Math.sin(free.pitch),free.target.z+free.dist*Math.cos(free.yaw)*cp);
+    if(camPos.y<0.3) camPos.y=0.3;
+    camLook.copy(free.target);
+    desktopCam.position.copy(camPos); desktopCam.lookAt(camLook);
+    return;
+  }
   const {L,Hm}=frameExtent();
   const t0=Math.tan(desktopCam.fov*DEG/2);
   const tanV=t0*view.visH/view.fullH, tanH=t0*view.visW/view.fullH;
@@ -975,9 +1050,13 @@ function updateDesktopCam(dt){
   if(state.cam==='side' || (state.cam==='follow' && !fly)){
     const d=Math.max((Lp/2)/tanH,(Hp/2)/tanV,8)*zoom;
     wantPos.set(d,cy+d*0.06,cz); wantLook.set(0,cy,cz);
-  } else if(state.cam==='behind'){
+  } else if(state.cam==='launch'){
     wantLook.set(0,Hm*0.35,-L*0.55);
     wantPos.set(5,P().h+4+L*0.08,10+L*0.12).sub(wantLook).multiplyScalar(zoom).add(wantLook);
+  } else if(state.cam==='target'){
+    const tz=targetZ();
+    wantLook.set(0,Math.max(2,Hm*0.45),-tz*0.4);
+    wantPos.set(6+tz*0.08,Math.max(6,Hm*0.85)+tz*0.08,-(tz+16+tz*0.4)).sub(wantLook).multiplyScalar(zoom).add(wantLook);
   } else {
     const b=fly.mesh.position; const s=fly.scale;
     wantLook.set(b.x,b.y,b.z-2*s);
@@ -1005,10 +1084,39 @@ function resize(){
   desktopCam.updateProjectionMatrix();
 }
 window.addEventListener('resize',resize);
-renderer.domElement.addEventListener('wheel',e=>{ e.preventDefault(); zoom=clamp(zoom*Math.exp(e.deltaY*0.0012),0.3,3); },{passive:false});
+renderer.domElement.addEventListener('wheel',e=>{
+  e.preventDefault();
+  if(state.cam==='free') free.dist=clamp(free.dist*Math.exp(e.deltaY*0.0012),2,3000);
+  else zoom=clamp(zoom*Math.exp(e.deltaY*0.0012),0.3,3);
+},{passive:false});
+{
+  const el=renderer.domElement, ptrs=new Map(); let mode='rot', down=null, lastSpan=0, lastMid=null;
+  const two=()=>{ const [a,b]=[...ptrs.values()]; return {span:Math.hypot(a.x-b.x,a.y-b.y),mid:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}; };
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+  el.addEventListener('pointerdown',e=>{
+    try{ el.setPointerCapture(e.pointerId); }catch(_){}
+    ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); down={x:e.clientX,y:e.clientY};
+    mode=(e.button===2||e.shiftKey||e.ctrlKey)?'pan':'rot';
+    if(ptrs.size===2){ const t=two(); lastSpan=t.span; lastMid=t.mid; }
+  });
+  el.addEventListener('pointermove',e=>{
+    const p=ptrs.get(e.pointerId); if(!p) return;
+    const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY;
+    if(state.cam!=='free'){ if(Math.hypot(e.clientX-down.x,e.clientY-down.y)>5) setCam('free'); return; }
+    if(ptrs.size>=2){
+      const t=two();
+      if(lastSpan>0 && t.span>0) free.dist=clamp(free.dist*lastSpan/t.span,2,3000);
+      if(lastMid) panBy(t.mid.x-lastMid.x,t.mid.y-lastMid.y);
+      lastSpan=t.span; lastMid=t.mid; return;
+    }
+    if(mode==='pan') panBy(dx,dy);
+    else { free.yaw-=dx*0.006; free.pitch=clamp(free.pitch+dy*0.006,-0.35,1.55); }
+  });
+  ['pointerup','pointercancel'].forEach(t=>el.addEventListener(t,e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2){ lastSpan=0; lastMid=null; } }));
+}
 
 /* ================= VR ================= */
-const PW=1024, PH=920;
+const PW=1024, PH=1016;
 const pCanvas=document.createElement('canvas'); pCanvas.width=PW; pCanvas.height=PH;
 const pctx=pCanvas.getContext('2d');
 const pTex=new THREE.CanvasTexture(pCanvas); pTex.minFilter=THREE.LinearFilter; pTex.generateMipmaps=false;
@@ -1038,10 +1146,10 @@ drawHandle('');
 function pBtn(id,x,y,w,h,label,o={}){
   panelButtons.push({id,x,y,w,h});
   const hv=hovered.has(id);
-  pctx.fillStyle=o.primary?(hv?'#ffd769':'#FFC93C'):o.active?'#14213D':(hv?'#E4ECF7':'#FFFFFF');
+  pctx.fillStyle=o.primary?(hv?'#ffd769':'#FFC93C'):o.danger?(hv?'#E0457B':'#C93466'):o.active?'#14213D':(hv?'#E4ECF7':'#FFFFFF');
   rr(pctx,x,y,w,h,14); pctx.fill();
   pctx.lineWidth=o.primary?5:3; pctx.strokeStyle=hv?'#1F63D1':'#14213D'; rr(pctx,x,y,w,h,14); pctx.stroke();
-  pctx.fillStyle=o.active?'#FFFFFF':'#14213D';
+  pctx.fillStyle=(o.active||o.danger)?'#FFFFFF':'#14213D';
   pctx.font=`700 ${o.size||30}px ${PF}`; pctx.textAlign='center'; pctx.textBaseline='middle';
   pctx.fillText(label,x+w/2,y+h/2+2);
 }
@@ -1068,7 +1176,10 @@ function drawPanel(){
   modes.forEach(([m,l],i)=>pBtn('mode:'+m,36+i*240,86,228,62,l,{active:state.mode===m}));
   Object.keys(PLANETS).forEach((k,i)=>pBtn('planet:'+k,36+i*240,164,228,56,PLANETS[k].name+' '+PLANETS[k].g,{active:state.planet===k,size:26}));
   const p=P(), locked=state.mode==='predict';
-  let y=236;
+  pText('Stand at',36,268,28,'#4A5873',400);
+  [['launch','Launch'],['side','Side'],['target','Target']].forEach(([v,l],i)=>pBtn('view:'+v,170+i*196,234,184,52,l,{active:vrView===v,size:26}));
+  pBtn('quit',776,234,212,52,'Quit VR',{danger:true,size:26});
+  let y=300;
   const row=(label,val,key,step)=>{
     pText(label,36,y+42,32,'#4A5873',400);
     pText(val,330,y+44,38,'#14213D',700);
@@ -1092,7 +1203,7 @@ function drawPanel(){
   pBtn('clear',564,y,204,84,'Clear trails',{size:28});
   pBtn('sim',780,y,208,84,'Playback '+(state.simSpeed===0.5?'½':state.simSpeed)+'×',{size:28});
   y+=104;
-  const boxH=PH-y-112;
+  const boxH=PH-y-142;
   c.fillStyle='#FFFFFF'; rr(c,36,y,952,boxH,16); c.fill();
   const kc=state.fb.kind==='hit'?'#13804F':state.fb.kind==='miss'?'#C93466':'#1F63D1';
   c.fillStyle=kc; rr(c,36,y,12,boxH,6); c.fill();
@@ -1104,8 +1215,9 @@ function drawPanel(){
     const vy=fly.v0.y-fly.g*fly.t, x=Math.hypot(fly.mesh.position.x-fly.p0.x,fly.mesh.position.z-fly.p0.z);
     pText('t '+fmt(fly.t,2)+' s    x '+fmt(x)+' m    y '+fmt(fly.mesh.position.y)+' m    vx '+fmt(Math.hypot(fly.v0.x,fly.v0.z))+'    vy '+fmt(vy)+' m/s',66,y+boxH-20,27,'#14213D',700);
   }
-  [['Trigger: press buttons, or fire when pointing away    A: fire    B: new target',PH-78],
-   ['Sticks: angle (left), speed (right)    Grip away from the panel: grab and throw',PH-48],
+  [['Trigger: press buttons, or fire when pointing away    A: fire    B: new target',PH-108],
+   ['Sticks up and down: angle (left), speed (right)    Right stick sideways: turn',PH-78],
+   ['Hold X, point at the ground, let go: move there    Grip away from panel: throw',PH-48],
    ['Move this panel: grip it, or hold the trigger on the bar below    Y: bring it here',PH-18]]
     .forEach(([t,yy])=>pText(fitText(t,23,960),512,yy,23,'#4A5873',400,'center'));
   pTex.needsUpdate=true;
@@ -1121,6 +1233,8 @@ function panelAction(id){
   const [kind,a,b]=id.split(':');
   if(kind==='mode') setMode(a);
   else if(kind==='planet') setPlanet(a);
+  else if(kind==='view') placeRig(a);
+  else if(id==='quit') quitGame();
   else if(kind==='adj') adjust(a,parseFloat(b));
   else if(id==='fire') fire();
   else if(id==='comp') fire(90-P().a);
@@ -1159,6 +1273,36 @@ for(let i=0;i<2;i++){
   rig.add(c); controllers.push(c);
 }
 function buzz(c,i,ms){ try{ const g=c.userData.src&&c.userData.src.gamepad; const h=g&&g.hapticActuators&&g.hapticActuators[0]; if(h&&h.pulse) h.pulse(i,ms); }catch(e){} }
+/* ---------- moving the player in VR ---------- */
+let vrView='launch';
+const tpMarker=new THREE.Mesh(new THREE.RingGeometry(0.35,0.5,32).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0xffc93c,transparent:true,opacity:0.9,depthTest:false}));
+tpMarker.renderOrder=30; tpMarker.visible=false; scene.add(tpMarker);
+let tpValid=false;
+function headWorld(){ return vrCam.getWorldPosition(new V3()); }
+function placeRig(view){
+  vrView=view;
+  const p=P(), floor=p.h>=0.6?p.h-0.6:0;
+  if(view==='launch'){ rig.position.set(1.8,floor,1.3); rig.rotation.set(0,0,0); }
+  else if(view==='side'){ const L=clamp(frameExtent().L,20,300); rig.position.set(clamp(L*0.55,12,120),0,-L/2); rig.rotation.set(0,Math.PI/2,0); }
+  else if(view==='target'){ rig.position.set(3.5,0,-(targetZ()+8)); rig.rotation.set(0,Math.PI,0); }
+  rig.updateMatrixWorld(true); needsPanel=true;
+  if(renderer.xr.isPresenting) sTick();
+}
+function teleportTo(pt){
+  const h=headWorld();
+  rig.position.set(pt.x-(h.x-rig.position.x),0,pt.z-(h.z-rig.position.z));
+  rig.updateMatrixWorld(true); vrView='free'; sTick(); needsPanel=true;
+}
+function snapTurn(dir){
+  const before=headWorld(); rig.rotation.y+=dir*Math.PI/6; rig.updateMatrixWorld(true);
+  const after=headWorld(); rig.position.x+=before.x-after.x; rig.position.z+=before.z-after.z; rig.updateMatrixWorld(true);
+}
+function quitGame(){
+  const s=renderer.xr.getSession&&renderer.xr.getSession();
+  if(s){ s.end(); return; }
+  if(history.length>1) history.back(); else location.href='index.html';
+}
+
 /* ---------- moving the panel ---------- */
 const head=new V3(), dragP=new V3(), dragOff=new V3();
 function startPanelDrag(c,via){
@@ -1250,8 +1394,12 @@ function updateVRInput(dt,now){
       const p=u.held.getWorldPosition(new V3()); u.hist.push({t:now,p}); if(u.hist.length>20) u.hist.shift();
     }
     const src=u.src; if(!src||!src.gamepad) continue;
-    const gp=src.gamepad, ax=gp.axes, y=ax.length>=4?ax[3]:(ax[1]||0);
-    if(!u.drag && Math.abs(y)>0.2){
+    const gp=src.gamepad, ax=gp.axes, y=ax.length>=4?ax[3]:(ax[1]||0), x=ax.length>=4?ax[2]:(ax[0]||0);
+    if(src.handedness!=='left' && !u.drag){
+      if(Math.abs(x)>0.7 && Math.abs(x)>Math.abs(y)){ if(!u.turned){ snapTurn(x>0?-1:1); u.turned=true; } }
+      else if(Math.abs(x)<0.3) u.turned=false;
+    }
+    if(!u.drag && Math.abs(y)>0.2 && Math.abs(y)>=Math.abs(x)){
       const amt=-y*Math.abs(y);
       if(src.handedness==='left'){
         if(state.mode==='predict') adjust('prediction',amt*dt*planet().predMax/6);
@@ -1263,7 +1411,15 @@ function updateVRInput(dt,now){
     if(src.handedness!=='left'){
       if(edge(4)) fire();
       if(edge(5)){ if(state.mode==='sandbox') clearTrails(); else newRound(); }
-    } else if(edge(5)) summonPanel();
+    } else {
+      if(edge(5)) summonPanel();
+      if(pressed(4)){
+        const o=raycaster.ray.origin, d=raycaster.ray.direction;
+        tpValid=false;
+        if(d.y<-0.02){ const t=-o.y/d.y; if(t<400){ tpMarker.position.set(o.x+d.x*t,0.03,o.z+d.z*t); tpValid=true; u.line.scale.z=t; } }
+        tpMarker.visible=tpValid;
+      } else if(u.prev[4]){ if(tpValid) teleportTo(tpMarker.position); tpMarker.visible=false; tpValid=false; }
+    }
     for(let i=0;i<gp.buttons.length;i++) u.prev[i]=pressed(i);
   }
   drawHandle(dragging?'drag':handleHover?'hover':'');
@@ -1287,7 +1443,7 @@ async function enterVR(){
     const session=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor']});
     await renderer.xr.setSession(session);
     panelMesh.visible=true; needsPanel=true;
-    session.addEventListener('end',()=>{ panelMesh.visible=false; controllers.forEach(c=>{ dropHeld(c); c.userData.drag=null; }); resize(); });
+    session.addEventListener('end',()=>{ panelMesh.visible=false; tpMarker.visible=false; controllers.forEach(c=>{ dropHeld(c); c.userData.drag=null; }); resize(); });
   }catch(e){
     setFeedback('miss','VR didn’t start',[String(e&&e.message||e),'Open the page directly in the Meta Quest Browser and try again.']);
   }
@@ -1319,7 +1475,8 @@ $('#previewT').addEventListener('change',e=>{ state.showPreview=e.target.checked
 $('#vectorsT').addEventListener('change',e=>{ state.showVectors=e.target.checked; });
 $('#dotsT').addEventListener('change',e=>{ state.showDots=e.target.checked; shots.forEach(s=>s.dots.visible=state.showDots); });
 document.querySelectorAll('#simSeg button').forEach(b=>b.addEventListener('click',()=>{ state.simSpeed=parseFloat(b.dataset.sim); markDirty(); syncUI(); }));
-document.querySelectorAll('#camSeg button').forEach(b=>b.addEventListener('click',()=>{ state.cam=b.dataset.cam; zoom=1; syncUI(); }));
+document.querySelectorAll('#camSeg button').forEach(b=>b.addEventListener('click',()=>setCam(b.dataset.cam)));
+$('#quitBtn').addEventListener('click',quitGame);
 $('#vrBtn').addEventListener('click',enterVR);
 const help=$('#help');
 function openHelp(vr){ if(help.showModal) help.showModal(); else help.setAttribute('open',''); if(vr) setTimeout(()=>$('#vrHelp').scrollIntoView({block:'start'}),30); }
@@ -1344,7 +1501,12 @@ window.addEventListener('keydown',e=>{
   else if(e.key==='ArrowLeft'){ e.preventDefault(); adjust('speed',e.shiftKey?-5:-0.5); syncUI(); }
   else if(e.key==='n'||e.key==='N'){ newRound(); }
   else if(e.key==='c'||e.key==='C'){ clearTrails(); }
+  else if(/^Digit[1-5]$/.test(e.code)){ setCam(['side','launch','target','follow','free'][+e.code.slice(5)-1]); }
+  else if(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE'].includes(e.code)){ if(state.cam!=='free') setCam('free'); }
 });
+window.addEventListener('keydown',e=>{ const tg=e.target; if(tg && (tg.tagName==='INPUT'||tg.tagName==='TEXTAREA')) return; keys.add(e.code); });
+window.addEventListener('keyup',e=>keys.delete(e.code));
+window.addEventListener('blur',()=>keys.clear());
 
 const NOTES={
   sandbox:'Experiment freely. Every shot leaves a trail, so you can compare paths side by side.',

@@ -61,7 +61,7 @@ button,input{font:inherit;color:inherit}
 h2{font:600 15px/1.2 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 8px;color:var(--ink)}
 section{margin-top:16px}
 
-.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--chip);border:1.5px solid var(--line);border-radius:12px;padding:4px}
+.tabs{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;background:var(--chip);border:1.5px solid var(--line);border-radius:12px;padding:4px}
 .tabs button{border:0;background:transparent;border-radius:8px;padding:8px 4px;font-weight:700;font-size:14px;line-height:1.15;cursor:pointer}
 .tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper)}
 .mode-note{margin:10px 0 0;color:var(--ink-2);font-size:14.5px}
@@ -194,6 +194,7 @@ dialog .close{float:right;border:1.5px solid var(--line);background:var(--chip);
     <button role="tab" data-mode="sandbox">Sandbox</button>
     <button role="tab" data-mode="target">Hit the target</button>
     <button role="tab" data-mode="predict">Predict the range</button>
+    <button role="tab" data-mode="falling">Falling target</button>
   </div>
   <p class="mode-note" id="modeNote"></p>
   <div class="score-row" id="scoreRow" hidden>
@@ -297,6 +298,7 @@ dialog .close{float:right;border:1.5px solid var(--line);background:var(--chip);
     <li><b>Sandbox:</b> change angle, speed, height and planet. Each shot leaves a coloured trail so you can compare. Try 30° and 60° at the same speed.</li>
     <li><b>Hit the target:</b> land inside the ring. First-shot hits score 100, then 70, 50, 30, 20.</li>
     <li><b>Predict the range:</b> the problem is set for you. Work out the range, enter it, and fire to check. Within 2% scores 100.</li>
+    <li><b>Falling target:</b> a crate hangs high above the range and drops the moment you fire. Hit it in mid-air before it reaches the ground. Think about where to aim when the ball and the crate are both falling.</li>
   </ul>
   <h3>Keyboard</h3>
   <div class="ctrl-table">
@@ -318,7 +320,10 @@ dialog .close{float:right;border:1.5px solid var(--line);background:var(--chip);
     <b>Right stick</b><span>Change the speed</span>
     <b>A</b><span>Fire</span>
     <b>B</b><span>New target or problem</span>
-    <b>Grip</b><span>Grab a ball, swing and let go to throw it. The game measures your throw and shows how far it would go on other planets.</span>
+    <b>Grip on the panel</b><span>Move the control panel. Point at the panel, hold the grip, move it where you want and let go. You can also point at the bar under the panel and hold the trigger.</span>
+    <b>Stick while moving</b><span>Push the panel further away or pull it closer</span>
+    <b>Y (left hand)</b><span>Bring the panel in front of you</span>
+    <b>Grip elsewhere</b><span>Grab a ball, swing and let go to throw it. The game measures your throw and shows how far it would go on other planets.</span>
   </div>
   <p id="vrStatus"></p>
   <p>Jupiter has no solid surface, so its “ground” is make-believe. Air resistance is ignored everywhere.</p>
@@ -507,6 +512,125 @@ const flag=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.0),new THREE.MeshLambert
 let targetLabel=null;
 target.visible=false;
 
+/* ---------- falling target ---------- */
+const CRATE=1.6, FALL_R=1.15;
+const fall={id:0,D:30,H:18,tLand:1.8,phase:'idle',t:0,shots:0,downAt:0};
+const crateTex=(()=>{ const c=document.createElement('canvas'); c.width=c.height=128; const x=c.getContext('2d');
+  x.fillStyle='#F4F7FB'; x.fillRect(0,0,128,128);
+  [[50,'#e0457b'],[38,'#ffffff'],[26,'#e0457b'],[14,'#ffffff'],[7,'#e0457b']].forEach(([r,col])=>{ x.fillStyle=col; x.beginPath(); x.arc(64,64,r,0,Math.PI*2); x.fill(); });
+  x.strokeStyle='#14213D'; x.lineWidth=8; x.strokeRect(4,4,120,120);
+  return new THREE.CanvasTexture(c); })();
+const crate=new THREE.Mesh(new THREE.BoxGeometry(CRATE,CRATE,CRATE),new THREE.MeshLambertMaterial({map:crateTex}));
+crate.visible=false; scene.add(crate);
+const fallRig=new THREE.Group(); fallRig.visible=false; scene.add(fallRig);
+const fallPost=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshLambertMaterial({color:0x9aa5b3})); fallRig.add(fallPost);
+const fallArm=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshLambertMaterial({color:0xffc93c})); fallRig.add(fallArm);
+const fallHook=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.3,0.5),metal); fallRig.add(fallHook);
+const rope=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,1,6),new THREE.MeshLambertMaterial({color:0x3a3a3a})); fallRig.add(rope);
+const fallPathMat=new THREE.LineDashedMaterial({color:0xffffff,dashSize:0.4,gapSize:0.3,transparent:true,opacity:0.8});
+let fallPath=null, fallLabel=null;
+function buildFallRig(){
+  const D=fall.D, H=fall.H, top=H+CRATE/2+1.0, px=-2.6;
+  fallPost.scale.set(0.3,top+0.2,0.3); fallPost.position.set(px,(top+0.2)/2,-D);
+  fallArm.scale.set(0.4-px,0.22,0.3); fallArm.position.set((px+0.4)/2,top,-D);
+  fallHook.position.set(0,top-0.26,-D);
+  const rTop=top-0.41, rBot=H+CRATE/2; rope.scale.set(1,rTop-rBot,1); rope.position.set(0,(rTop+rBot)/2,-D);
+  if(fallPath){ fallRig.remove(fallPath); fallPath.geometry.dispose(); }
+  fallPath=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(0,0.05,-D),new V3(0,H,-D)]),fallPathMat);
+  fallPath.computeLineDistances(); fallRig.add(fallPath);
+  if(fallLabel){ fallRig.remove(fallLabel); disposeObj(fallLabel); }
+  const lh=0.7+D*0.012;
+  fallLabel=textSprite('Falls from '+fmt(H)+' m, '+fmt(D)+' m away',{worldH:lh,depthTest:false,bg:'rgba(224,69,123,0.95)',fg:'#ffffff'});
+  fallLabel.position.set(px/2,top+lh*1.2,-D); fallRig.add(fallLabel);
+}
+function fallY(t){ return Math.max(CRATE/2,fall.H-0.5*planet().g*t*t); }
+function rehang(){
+  fall.phase='hanging'; fall.t=0; crate.visible=true; rope.visible=true;
+  crate.position.set(0,fall.H,-fall.D); markDirty();
+}
+function newFall(){
+  const g=planet().g, h=P().h;
+  let D=15, H=Math.max(10,h+3)+6, ok=false;
+  for(let i=0;i<80 && !ok;i++){
+    const lo=Math.max(10,h+3), hi=Math.max(lo+4,30);
+    H=Math.round((lo+Math.random()*(hi-lo))*2)/2;
+    D=Math.round((15+Math.random()*40)*2)/2;
+    const tl=Math.sqrt(2*(H-CRATE/2)/g), vmin=D/(Math.cos(Math.atan2(H-h,D))*tl);
+    ok=vmin<=30;
+  }
+  if(!ok) D=15;
+  fall.id++; fall.D=D; fall.H=H; fall.shots=0; fall.tLand=Math.sqrt(2*(H-CRATE/2)/g);
+  buildFallRig(); rehang(); clearTrails();
+  setFeedback('info','Falling target: '+fmt(H)+' m up, '+fmt(D)+' m away',['It drops the moment you fire.','Hit it before it reaches the ground.']);
+  markDirty();
+}
+// Ball and crate both fall ½gt², so relative to each other they move in a straight line.
+// That lets the hit be worked out exactly at launch, with no frame-rate tunnelling.
+function attachFall(s){
+  if(fall.phase==='hanging'){ fall.phase='falling'; fall.t=0; rope.visible=false; tone(520,0.08,'square',0.08); }
+  if(fall.phase!=='falling') return;
+  const g=s.g, tau=fall.t; s.tau0=tau;
+  const r0=new V3(s.p0.x, s.p0.y-fall.H+0.5*g*tau*tau, s.p0.z+fall.D);
+  const w=new V3(s.v0.x, s.v0.y+g*tau, s.v0.z);
+  const tEnd=Math.min(s.T,fall.tLand-tau);
+  const a=w.lengthSq(), b=2*r0.dot(w), c=r0.lengthSq()-FALL_R*FALL_R;
+  if(tEnd>0 && a>1e-9){
+    const disc=b*b-4*a*c;
+    if(disc>=0){ const t1=(-b-Math.sqrt(disc))/(2*a); if(t1>=0 && t1<=tEnd) s.hitT=t1; }
+  }
+}
+function onFallHit(s){
+  s.done=true;
+  fall.phase='gone'; fall.t=s.hitT+s.tau0;
+  const p=s.mesh.position.clone();
+  crate.position.y=fallY(fall.t); crate.visible=false; rope.visible=false;
+  burst(p,0xffc93c,36,8,1.2); burst(p,0xe0457b,24,7,1.2); burst(p,0xf4f7fb,18,6,1.4);
+  sDing();
+  const ws=labelScale(s);
+  const lbl=textSprite('Hit at '+fmt(p.y)+' m up',{worldH:ws,depthTest:false,border:'#'+s.color.toString(16).padStart(6,'0')});
+  lbl.position.set(p.x,p.y+ws*1.4,p.z); s.group.add(lbl); s.labels.push(lbl);
+  if(s.source==='cannon'){
+    const pts=[100,70,50,30,20][Math.min(Math.max(fall.shots,1)-1,4)]; addScore(pts);
+    const q=s.params, aim=Math.atan2(fall.H-q.h,fall.D)/DEG;
+    setFeedback('hit','Hit! +'+pts+' points',['Hit after '+fmt(s.hitT,2)+' s, '+fmt(p.y)+' m above the ground.',
+      'You aimed at '+fmtN(q.a)+'°. Straight at the crate was '+fmt(aim)+'°.',
+      'The ball and the crate fell the same distance in the same time.']);
+  } else {
+    addScore(50);
+    setFeedback('hit','Throw hit the falling target! +50',['Hit after '+fmt(s.hitT,2)+' s, '+fmt(p.y)+' m above the ground.']);
+  }
+  const myId=fall.id; setTimeout(()=>{ if(state.mode==='falling' && fall.id===myId) newFall(); },2400);
+  markDirty();
+}
+function fallMiss(s){
+  if(fall.phase==='gone') return;
+  const q=s.params, g=q.g, D=fall.D, tl=fall.tLand-(s.tau0||0);
+  const tx=q.vx>1e-6?D/q.vx:Infinity;
+  const tip=fall.shots>=2?'Tip: point the barrel straight at the crate. It falls exactly as fast as your ball.':'';
+  if(!isFinite(tx)){ setFeedback('miss','Missed',['At 90° the ball goes straight up and never moves towards the crate.']); return; }
+  if(tx<=Math.min(q.T,tl)){
+    const gap=(fall.H-0.5*g*tx*tx)-(q.h+q.vy*tx-0.5*g*tx*tx);
+    setFeedback('miss','Passed '+fmt(Math.abs(gap))+' m '+(gap>0?'under':'over')+' the crate',
+      ['Your ball got there after '+fmt(tx,2)+' s.',gap>0?'Aim higher.':'Aim lower.',tip]);
+  } else if(q.T<tl){
+    setFeedback('miss','Landed short',['Your ball hit the ground '+fmt(q.R)+' m away. The crate is '+fmt(D)+' m away.','Aim higher, or add speed.',tip]);
+  } else {
+    setFeedback('miss','Too slow',['The crate reached the ground after '+fmt(fall.tLand,2)+' s. Your ball needed '+fmt(tx,2)+' s.',
+      'Add speed. Horizontal speed must be at least '+fmt(D/fall.tLand)+' m/s.',tip]);
+  }
+}
+function updateFalling(dt){
+  if(state.mode!=='falling') return;
+  if(fall.phase==='falling'){
+    fall.t+=dt*state.simSpeed;
+    if(fall.t>=fall.tLand){
+      fall.t=fall.tLand; fall.phase='down'; fall.downAt=elapsed;
+      sThud(); burst(new V3(0,0.1,-fall.D),0xb59a74,16,3,0.9); markDirty();
+    }
+    crate.position.y=fallY(fall.t);
+  } else if(fall.phase==='down' && !flyingShot() && elapsed-fall.downAt>1.6) rehang();
+}
+
 /* ---------- shots ---------- */
 const COLORS=[0xffc93c,0x22d3ee,0xff6fae,0x9be564,0xb39ddb,0xff8a50,0xffffff,0x4dd0e1];
 let colorIdx=0;
@@ -530,7 +654,7 @@ function launch({p0,v0,g,source,params}){
   const tpos=new Float32Array(MAXP*3); const tgeo=new THREE.BufferGeometry(); tgeo.setAttribute('position',new THREE.BufferAttribute(tpos,3)); tgeo.setDrawRange(0,0);
   const line=new THREE.Line(tgeo,new THREE.LineBasicMaterial({color})); line.frustumCulled=false; group.add(line);
   const dpos=new Float32Array(MAXD*3); const dgeo=new THREE.BufferGeometry(); dgeo.setAttribute('position',new THREE.BufferAttribute(dpos,3)); dgeo.setDrawRange(0,0);
-  const vh=Math.hypot(v0.x,v0.z); const range=vh*T;
+  const vh=Math.hypot(v0.x,v0.z); const range=state.mode==='falling'?Math.min(vh*T,fall.D+10):vh*T; // size things to what's on screen
   const dotSize=clamp(0.4+range*0.012,0.4,6);
   const dots=new THREE.Points(dgeo,new THREE.PointsMaterial({color,size:dotSize,map:dotTex,alphaTest:0.5,transparent:true,sizeAttenuation:true}));
   dots.frustumCulled=false; dots.visible=state.showDots; group.add(dots);
@@ -541,6 +665,7 @@ function launch({p0,v0,g,source,params}){
   mesh.scale.setScalar(clamp(range/25,1,10));
   addTrail(shot,p0); addDot(shot,p0); shot.nextDot=shot.interval;
   shots.push(shot); activeShot=shot; trimShots();
+  if(state.mode==='falling') attachFall(shot);
   return shot;
 }
 function addTrail(s,p){ if(s.tcount>=MAXP) return; s.tpos.set([p.x,p.y,p.z],s.tcount*3); s.tcount++; s.line.geometry.setDrawRange(0,s.tcount); s.line.geometry.attributes.position.needsUpdate=true; }
@@ -556,14 +681,15 @@ function updateShots(dt){
   for(const s of shots){
     if(s.done) continue;
     s.t+=dt*state.simSpeed;
-    let landed=false;
-    if(s.t>=s.T){ s.t=s.T; landed=true; }
+    let landed=false, hitNow=false;
+    if(s.hitT!=null && state.mode==='falling' && fall.phase==='falling' && s.t>=s.hitT){ s.t=s.hitT; hitNow=true; }
+    else if(s.t>=s.T){ s.t=s.T; landed=true; }
     while(s.nextDot<=s.t+1e-9){ posAt(s,s.nextDot,tmp2); addDot(s,tmp2); s.nextDot+=s.interval; }
     posAt(s,s.t,tmp); s.mesh.position.copy(tmp);
     s.extL=Math.max(s.extL,Math.abs(tmp.z),Math.abs(tmp.x)); s.extH=Math.max(s.extH,tmp.y);
-    if(tmp.distanceTo(s.last)>0.12||landed){ addTrail(s,tmp); s.last.copy(tmp); }
+    if(tmp.distanceTo(s.last)>0.12||landed||hitNow){ addTrail(s,tmp); s.last.copy(tmp); }
     if(!s.apexShown && s.v0.y>0.2 && s.t>=s.v0.y/s.g){ s.apexShown=true; addApex(s); }
-    if(landed) onLand(s);
+    if(hitNow) onFallHit(s); else if(landed) onLand(s);
   }
 }
 function labelScale(s){ return clamp(0.55+s.range*0.018,0.55,14); }
@@ -619,6 +745,8 @@ function cannonResult(s,hit){
         ['Landed '+fmt(q.R)+' m, target at '+fmt(state.targetDist)+' m',
          aimHint(miss>0,q.a)]);
     }
+  } else if(state.mode==='falling'){
+    fallMiss(s);
   } else if(state.mode==='predict'){
     const pred=q.prediction, err=Math.abs(pred-q.R), pct=err/Math.max(q.R,0.01)*100;
     const pts=pct<=2?100:pct<=5?80:pct<=10?50:pct<=20?20:0;
@@ -743,13 +871,20 @@ function fire(angleOverride){
     if(state.predictDone){ newProblem(); return; }
     if(shots.some(s=>!s.done && s.source==='cannon')) return;
   }
+  if(state.mode==='falling'){
+    if(fall.phase==='falling'||fall.phase==='gone') return;
+    if(shots.some(s=>!s.done && s.source==='cannon')) return;
+    if(fall.phase==='down') rehang();
+    fall.shots++;
+  }
   const p=P(); const a=angleOverride!=null?angleOverride:p.a;
   const s=solve(a,p.v,p.h,p.g);
-  const params=Object.assign({a,v:p.v,h:p.h,g:p.g,prediction:snap(state.prediction,0.1)},s);
+  const params=Object.assign({a,v:p.v,h:p.h,g:p.g,prediction:snap(state.prediction,0.1),fallId:state.mode==='falling'?fall.id:null},s);
   launch({p0:new V3(0,p.h,0),v0:new V3(0,s.vy,-s.vx),g:p.g,source:'cannon',params});
   if(angleOverride!=null) curAngle=a;
   state.lastCannon=params;
   recoil=1; flash.material.opacity=1; sBoom();
+  if(state.mode==='falling') setFeedback('info','In flight…',['θ = '+fmtN(a)+'°, v = '+fmtN(p.v)+' m/s, h = '+fmtN(p.h)+' m','The crate dropped the moment you fired.']);
   if(state.mode==='sandbox') setFeedback('info','In flight…',['θ = '+fmtN(a)+'°, v = '+fmtN(p.v)+' m/s, h = '+fmtN(p.h)+' m', state.showDots?'Watch the dots: same spacing sideways, changing spacing up and down.':'']);
   markDirty();
 }
@@ -780,17 +915,23 @@ function newProblem(){
   setFeedback('info','Predict the range',['θ = '+a+'°, v = '+v+' m/s, h = '+h+' m, g = '+pl.g+' m/s²','Work it out, enter your answer, then fire.']);
   markDirty();
 }
+function newRound(){
+  if(state.mode==='target') newTarget();
+  else if(state.mode==='predict') newProblem();
+  else if(state.mode==='falling') newFall();
+}
 function setMode(m){
   state.mode=m; target.visible=(m==='target');
+  const f=m==='falling'; fallRig.visible=f; crate.visible=f; if(!f) fall.phase='idle';
   if(m==='target') newTarget();
   else if(m==='predict') newProblem();
+  else if(f) newFall();
   else { setFeedback('info','Sandbox',['Set an angle and speed, then fire.','Each shot leaves a trail so you can compare paths.']); }
   updatePreview(); markDirty(); syncUI();
 }
 function setPlanet(k){
   state.planet=k; applyPlanet();
-  if(state.mode==='target') newTarget();
-  else if(state.mode==='predict') newProblem();
+  if(state.mode!=='sandbox') newRound();
   else setFeedback('info','Gravity on '+planet().name+': '+planet().g+' m/s²',['Fire the same shot again to compare with the last planet.']);
   updatePreview(); markDirty(); syncUI();
 }
@@ -819,6 +960,7 @@ function frameExtent(){
   if(state.mode==='sandbox'){ const s=solve(p.a,p.v,p.h,p.g); L=Math.max(L,s.R); Hm=Math.max(Hm,s.H); }
   if(state.mode==='target') L=Math.max(L,state.targetDist+6);
   if(state.mode==='predict' && !state.predictDone) L=Math.max(L,40);
+  if(state.mode==='falling'){ L=Math.max(L,fall.D+6); Hm=Math.max(Hm,fall.H+CRATE/2+5); }
   Hm=Math.max(Hm,p.h+3);
   for(const s of shots){ L=Math.max(L,s.extL); Hm=Math.max(Hm,s.extH); }
   return {L,Hm};
@@ -866,7 +1008,7 @@ window.addEventListener('resize',resize);
 renderer.domElement.addEventListener('wheel',e=>{ e.preventDefault(); zoom=clamp(zoom*Math.exp(e.deltaY*0.0012),0.3,3); },{passive:false});
 
 /* ================= VR ================= */
-const PW=1024, PH=860;
+const PW=1024, PH=920;
 const pCanvas=document.createElement('canvas'); pCanvas.width=PW; pCanvas.height=PH;
 const pctx=pCanvas.getContext('2d');
 const pTex=new THREE.CanvasTexture(pCanvas); pTex.minFilter=THREE.LinearFilter; pTex.generateMipmaps=false;
@@ -875,6 +1017,24 @@ panelMesh.position.set(1.0,1.3,-0.95); panelMesh.rotation.y=-0.84; panelMesh.vis
 let panelButtons=[];
 const hovered=new Set();
 const PF='"Atkinson Hyperlegible", system-ui, sans-serif';
+// grab bar under the panel, like the bar under Quest windows
+const PANEL_H=1.2*PH/PW;
+const hCanvas=document.createElement('canvas'); hCanvas.width=512; hCanvas.height=80;
+const hCtx=hCanvas.getContext('2d');
+const hTex=new THREE.CanvasTexture(hCanvas); hTex.minFilter=THREE.LinearFilter; hTex.generateMipmaps=false;
+const handleMesh=new THREE.Mesh(new THREE.PlaneGeometry(0.46,0.46*80/512),new THREE.MeshBasicMaterial({map:hTex,transparent:true,fog:false}));
+handleMesh.position.set(0,-PANEL_H/2-0.06,0.002); panelMesh.add(handleMesh);
+let handleState=null;
+function drawHandle(st){
+  if(st===handleState) return; handleState=st;
+  const c=hCtx; c.clearRect(0,0,512,80);
+  c.fillStyle=st?'#FFC93C':'rgba(244,247,251,0.96)'; rr(c,4,4,504,72,36); c.fill();
+  c.lineWidth=4; c.strokeStyle='#14213D'; rr(c,4,4,504,72,36); c.stroke();
+  c.fillStyle='#14213D'; c.font='700 30px '+PF; c.textAlign='center'; c.textBaseline='middle';
+  c.fillText(st==='drag'?'Moving the panel':'Hold here to move panel',256,42);
+  hTex.needsUpdate=true;
+}
+drawHandle('');
 function pBtn(id,x,y,w,h,label,o={}){
   panelButtons.push({id,x,y,w,h});
   const hv=hovered.has(id);
@@ -904,8 +1064,8 @@ function drawPanel(){
   c.drawImage(panelBg(),0,0);
   pText('Projectile Lab',36,62,44,'#14213D',800);
   if(state.mode!=='sandbox') pText('Score '+state.score,988,60,36,'#14213D',700,'right');
-  const modes=[['sandbox','Sandbox'],['target','Target'],['predict','Predict']];
-  modes.forEach(([m,l],i)=>pBtn('mode:'+m,36+i*320,86,300,62,l,{active:state.mode===m}));
+  const modes=[['sandbox','Sandbox'],['target','Target'],['predict','Predict'],['falling','Falling']];
+  modes.forEach(([m,l],i)=>pBtn('mode:'+m,36+i*240,86,228,62,l,{active:state.mode===m}));
   Object.keys(PLANETS).forEach((k,i)=>pBtn('planet:'+k,36+i*240,164,228,56,PLANETS[k].name+' '+PLANETS[k].g,{active:state.planet===k,size:26}));
   const p=P(), locked=state.mode==='predict';
   let y=236;
@@ -927,12 +1087,12 @@ function drawPanel(){
   y+=12;
   const fireLabel=(state.mode==='predict'&&state.predictDone)?'Next':'FIRE';
   pBtn('fire',36,y,300,84,fireLabel,{primary:true,size:40});
-  const second=state.mode==='sandbox'?['comp','90° − θ']:state.mode==='target'?['new','New target']:['new','New problem'];
+  const second=state.mode==='sandbox'?['comp','90° − θ']:state.mode==='predict'?['new','New problem']:['new','New target'];
   pBtn(second[0],348,y,204,84,second[1],{size:28});
   pBtn('clear',564,y,204,84,'Clear trails',{size:28});
   pBtn('sim',780,y,208,84,'Playback '+(state.simSpeed===0.5?'½':state.simSpeed)+'×',{size:28});
   y+=104;
-  const boxH=PH-y-64;
+  const boxH=PH-y-112;
   c.fillStyle='#FFFFFF'; rr(c,36,y,952,boxH,16); c.fill();
   const kc=state.fb.kind==='hit'?'#13804F':state.fb.kind==='miss'?'#C93466':'#1F63D1';
   c.fillStyle=kc; rr(c,36,y,12,boxH,6); c.fill();
@@ -944,7 +1104,10 @@ function drawPanel(){
     const vy=fly.v0.y-fly.g*fly.t, x=Math.hypot(fly.mesh.position.x-fly.p0.x,fly.mesh.position.z-fly.p0.z);
     pText('t '+fmt(fly.t,2)+' s    x '+fmt(x)+' m    y '+fmt(fly.mesh.position.y)+' m    vx '+fmt(Math.hypot(fly.v0.x,fly.v0.z))+'    vy '+fmt(vy)+' m/s',66,y+boxH-20,27,'#14213D',700);
   }
-  pText('Trigger: buttons or fire    Sticks: angle (L), speed (R)    A: fire    Grip: grab and throw',512,PH-24,24,'#4A5873',400,'center');
+  [['Trigger: press buttons, or fire when pointing away    A: fire    B: new target',PH-78],
+   ['Sticks: angle (left), speed (right)    Grip away from the panel: grab and throw',PH-48],
+   ['Move this panel: grip it, or hold the trigger on the bar below    Y: bring it here',PH-18]]
+    .forEach(([t,yy])=>pText(fitText(t,23,960),512,yy,23,'#4A5873',400,'center'));
   pTex.needsUpdate=true;
 }
 function fitText(t,size,maxW,bold){
@@ -961,7 +1124,7 @@ function panelAction(id){
   else if(kind==='adj') adjust(a,parseFloat(b));
   else if(id==='fire') fire();
   else if(id==='comp') fire(90-P().a);
-  else if(id==='new') (state.mode==='target'?newTarget:newProblem)();
+  else if(id==='new') newRound();
   else if(id==='clear') clearTrails();
   else if(id==='sim'){ const o=[0.5,1,2,4]; state.simSpeed=o[(o.indexOf(state.simSpeed)+1)%o.length]; markDirty(); }
 }
@@ -979,14 +1142,58 @@ for(let i=0;i<2;i++){
   line.scale.z=4; c.add(line); c.userData.line=line;
   const tip=new THREE.Mesh(new THREE.ConeGeometry(0.02,0.08,10).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0xffc93c})); c.add(tip);
   c.addEventListener('connected',e=>{ c.userData.src=e.data; c.visible=true; });
-  c.addEventListener('disconnected',()=>{ c.userData.src=null; c.visible=false; dropHeld(c); });
+  c.addEventListener('disconnected',()=>{ c.userData.src=null; c.visible=false; dropHeld(c); endPanelDrag(c); });
+  c.addEventListener('selectstart',()=>{ if(c.userData.onHandle && !c.userData.drag) startPanelDrag(c,'trigger'); });
+  c.addEventListener('selectend',()=>{ if(c.userData.drag && c.userData.drag.via==='trigger') endPanelDrag(c); });
   c.addEventListener('select',()=>onSelect(c));
-  c.addEventListener('squeezestart',()=>grab(c));
-  c.addEventListener('squeezeend',()=>release(c));
+  c.addEventListener('squeezestart',()=>{
+    const u=c.userData; if(u.drag) return;
+    if(u.onPanel && startPanelDrag(c,'grip')) return;
+    grab(c);
+  });
+  c.addEventListener('squeezeend',()=>{
+    const u=c.userData;
+    if(u.drag && u.drag.via==='grip'){ endPanelDrag(c); return; }
+    release(c);
+  });
   rig.add(c); controllers.push(c);
 }
 function buzz(c,i,ms){ try{ const g=c.userData.src&&c.userData.src.gamepad; const h=g&&g.hapticActuators&&g.hapticActuators[0]; if(h&&h.pulse) h.pulse(i,ms); }catch(e){} }
+/* ---------- moving the panel ---------- */
+const head=new V3(), dragP=new V3(), dragOff=new V3();
+function startPanelDrag(c,via){
+  const u=c.userData;
+  if(!u.lastHit || controllers.some(o=>o.userData.drag)) return false;
+  panelMesh.updateMatrixWorld(true);
+  const local=panelMesh.worldToLocal(u.lastHit.point.clone()); local.z=0;
+  u.drag={via,dist:u.lastHit.dist,local};
+  buzz(c,0.35,30); sTick(); needsPanel=true;
+  return true;
+}
+function endPanelDrag(c){
+  const u=c.userData; if(!u.drag) return;
+  u.drag=null; u.dragEnded=performance.now(); buzz(c,0.25,20);
+}
+// keep the grabbed point under the controller ray and turn the panel to face the player
+function movePanelTo(origin,dir,d){
+  dragP.copy(dir).multiplyScalar(d.dist).add(origin);
+  vrCam.getWorldPosition(head);
+  panelMesh.position.copy(rig.worldToLocal(dragP.clone()));
+  panelMesh.lookAt(head);
+  dragOff.copy(d.local).applyQuaternion(panelMesh.quaternion);
+  panelMesh.position.sub(dragOff);
+}
+function summonPanel(){
+  vrCam.getWorldPosition(head);
+  const fwd=new V3(0,0,-1).applyQuaternion(vrCam.getWorldQuaternion(new THREE.Quaternion())); fwd.y=0;
+  if(fwd.lengthSq()<1e-4) fwd.set(0,0,-1); fwd.normalize();
+  const p=head.clone().addScaledVector(fwd,0.8); p.y-=0.3;
+  panelMesh.position.copy(rig.worldToLocal(p)); panelMesh.lookAt(head);
+  sTick(); needsPanel=true;
+}
 function onSelect(c){
+  const u=c.userData;
+  if(u.drag || u.onHandle || performance.now()-(u.dragEnded||0)<350) return;
   if(c.userData.hover){ panelAction(c.userData.hover); buzz(c,0.3,25); }
   else if(!c.userData.onPanel){ fire(); buzz(c,0.8,80); }
 }
@@ -1014,26 +1221,37 @@ function release(c){
 function updateVRInput(dt,now){
   rig.updateMatrixWorld(true);
   const prevHover=[...hovered].join('|'); hovered.clear();
-  let flyingInPanel=false;
+  let handleHover=false, dragging=false;
   for(const c of controllers){
     const u=c.userData;
-    u.hover=null; u.onPanel=false;
+    u.hover=null; u.onPanel=false; u.onHandle=false; u.lastHit=null;
     tmpM.identity().extractRotation(c.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
     raycaster.ray.direction.set(0,0,-1).applyMatrix4(tmpM);
-    const hit=raycaster.intersectObject(panelMesh,false)[0];
-    if(hit && hit.uv){
-      u.onPanel=true; u.line.scale.z=hit.distance;
-      const px=hit.uv.x*PW, py=(1-hit.uv.y)*PH;
-      const b=panelButtons.find(b=>px>=b.x&&px<=b.x+b.w&&py>=b.y&&py<=b.y+b.h);
-      if(b){ u.hover=b.id; hovered.add(b.id); }
-    } else u.line.scale.z=4;
+    if(u.drag){
+      dragging=true;
+      const gpd=u.src&&u.src.gamepad, axd=gpd?gpd.axes:[], sy=axd.length>=4?axd[3]:(axd[1]||0);
+      if(Math.abs(sy)>0.2) u.drag.dist=clamp(u.drag.dist-sy*Math.abs(sy)*dt*1.5,0.3,3);
+      movePanelTo(raycaster.ray.origin,raycaster.ray.direction,u.drag);
+      u.onPanel=true; u.line.scale.z=u.drag.dist;
+    } else {
+      const hit=raycaster.intersectObjects([handleMesh,panelMesh],false)[0];
+      if(hit){
+        u.onPanel=true; u.line.scale.z=hit.distance; u.lastHit={point:hit.point.clone(),dist:hit.distance};
+        if(hit.object===handleMesh){ u.onHandle=true; handleHover=true; }
+        else if(hit.uv){
+          const px=hit.uv.x*PW, py=(1-hit.uv.y)*PH;
+          const b=panelButtons.find(b=>px>=b.x&&px<=b.x+b.w&&py>=b.y&&py<=b.y+b.h);
+          if(b){ u.hover=b.id; hovered.add(b.id); }
+        }
+      } else u.line.scale.z=4;
+    }
     if(u.held){
       const p=u.held.getWorldPosition(new V3()); u.hist.push({t:now,p}); if(u.hist.length>20) u.hist.shift();
     }
     const src=u.src; if(!src||!src.gamepad) continue;
     const gp=src.gamepad, ax=gp.axes, y=ax.length>=4?ax[3]:(ax[1]||0);
-    if(Math.abs(y)>0.2){
+    if(!u.drag && Math.abs(y)>0.2){
       const amt=-y*Math.abs(y);
       if(src.handedness==='left'){
         if(state.mode==='predict') adjust('prediction',amt*dt*planet().predMax/6);
@@ -1044,10 +1262,11 @@ function updateVRInput(dt,now){
     const edge=i=>pressed(i)&&!u.prev[i];
     if(src.handedness!=='left'){
       if(edge(4)) fire();
-      if(edge(5)){ if(state.mode==='target') newTarget(); else if(state.mode==='predict') newProblem(); else clearTrails(); }
-    }
+      if(edge(5)){ if(state.mode==='sandbox') clearTrails(); else newRound(); }
+    } else if(edge(5)) summonPanel();
     for(let i=0;i<gp.buttons.length;i++) u.prev[i]=pressed(i);
   }
+  drawHandle(dragging?'drag':handleHover?'hover':'');
   if([...hovered].join('|')!==prevHover) needsPanel=true;
 }
 
@@ -1068,7 +1287,7 @@ async function enterVR(){
     const session=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor']});
     await renderer.xr.setSession(session);
     panelMesh.visible=true; needsPanel=true;
-    session.addEventListener('end',()=>{ panelMesh.visible=false; controllers.forEach(dropHeld); resize(); });
+    session.addEventListener('end',()=>{ panelMesh.visible=false; controllers.forEach(c=>{ dropHeld(c); c.userData.drag=null; }); resize(); });
   }catch(e){
     setFeedback('miss','VR didn’t start',[String(e&&e.message||e),'Open the page directly in the Meta Quest Browser and try again.']);
   }
@@ -1094,7 +1313,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
 $('#fire').addEventListener('click',()=>fire());
 $('#fireMini').addEventListener('click',()=>fire());
 $('#compBtn').addEventListener('click',()=>fire(90-P().a));
-$('#newBtn').addEventListener('click',()=>{ if(state.mode==='target') newTarget(); else newProblem(); });
+$('#newBtn').addEventListener('click',newRound);
 $('#clearBtn').addEventListener('click',clearTrails);
 $('#previewT').addEventListener('change',e=>{ state.showPreview=e.target.checked; updatePreview(); });
 $('#vectorsT').addEventListener('change',e=>{ state.showVectors=e.target.checked; });
@@ -1123,14 +1342,15 @@ window.addEventListener('keydown',e=>{
   else if(e.key==='ArrowDown'){ e.preventDefault(); adjust('angle',e.shiftKey?-5:-0.5); syncUI(); }
   else if(e.key==='ArrowRight'){ e.preventDefault(); adjust('speed',e.shiftKey?5:0.5); syncUI(); }
   else if(e.key==='ArrowLeft'){ e.preventDefault(); adjust('speed',e.shiftKey?-5:-0.5); syncUI(); }
-  else if(e.key==='n'||e.key==='N'){ if(state.mode==='target') newTarget(); else if(state.mode==='predict') newProblem(); }
+  else if(e.key==='n'||e.key==='N'){ newRound(); }
   else if(e.key==='c'||e.key==='C'){ clearTrails(); }
 });
 
 const NOTES={
   sandbox:'Experiment freely. Every shot leaves a trail, so you can compare paths side by side.',
   target:'Land the ball inside the ring. Fewer shots earn more points.',
-  predict:'Work out where the ball will land, enter your answer, then fire to check it.'
+  predict:'Work out where the ball will land, enter your answer, then fire to check it.',
+  falling:'The crate drops the moment you fire. Hit it in mid-air before it reaches the ground.'
 };
 function setNum(el,v){ if(document.activeElement!==el) el.value=v; }
 function syncUI(){
@@ -1153,7 +1373,7 @@ function syncUI(){
   if(locked && state.problem){ const q=state.problem; $('#problemText').innerHTML='A ball is launched at <b>θ</b> = '+q.a+'° with speed <b>v</b> = '+q.v+' m/s from a height <b>h</b> = '+q.h+' m on '+pl.name+' (<b>g</b> = '+pl.g+' m/s²). How far away does it land?'; }
   $('#compBtn').hidden=state.mode!=='sandbox';
   $('#newBtn').hidden=state.mode==='sandbox';
-  $('#newBtn').textContent=state.mode==='target'?'New target':'New problem';
+  $('#newBtn').textContent=state.mode==='predict'?'New problem':'New target';
   $('#previewLbl').classList.toggle('dim',state.mode!=='sandbox'); $('#previewT').disabled=state.mode!=='sandbox';
   const next=locked&&state.predictDone;
   $('#fireLabel').textContent=next?'Next problem':(locked?'Fire to check':'Fire');
@@ -1170,8 +1390,31 @@ function renderFeedback(pop){
   el.hidden=!fb.title;
   if(pop){ void el.offsetWidth; el.classList.add('pop'); }
 }
+function renderFallMath(m){
+  const f=fall, g=planet().g, d=f.H-CRATE/2, tl=f.tLand;
+  const last=(state.lastCannon && state.lastCannon.fallId===f.id)?state.lastCannon:null;
+  const V=(x,dp,u)=>'<span class="v">'+fmt(x,dp)+'</span>'+(u?' '+u:'');
+  let html='<p class="src">The crate is '+fmt(f.H)+' m up and '+fmt(f.D)+' m away. It starts falling the moment you fire.</p>'+
+   '<h3>Height of the crate</h3><div class="eq"><i>y</i><sub>crate</sub> = <i>H</i> − ½<i>gt</i>²</div>'+
+   '<h3>Height of the ball</h3><div class="eq"><i>y</i><sub>ball</sub> = <i>h</i> + <i>v</i><sub>y</sub><i>t</i> − ½<i>gt</i>²</div>'+
+   '<h3>Gap between them</h3><div class="eq"><i>y</i><sub>crate</sub> − <i>y</i><sub>ball</sub> = (<i>H</i> − <i>h</i>) − <i>v</i><sub>y</sub><i>t</i></div>'+
+   '<div class="note">The ½<i>gt</i>² terms cancel. Gravity pulls both down by the same amount, so it doesn’t change the gap.</div>'+
+   '<h3>When the ball reaches the crate</h3><div class="eq"><i>t</i> = <i>D</i> / <i>v</i><sub>x</sub>';
+  if(last){
+    const tx=f.D/last.vx, gap=(f.H-last.h)-last.vy*tx;
+    html+=' = '+fmt(f.D)+' / '+fmt(last.vx,2)+' = '+V(tx,2,'s')+'</div>'+
+      '<div class="eq">gap = ('+fmt(f.H)+' − '+fmtN(last.h)+') − '+fmt(last.vy,2)+' × '+fmt(tx,2)+' = '+V(gap,1,'m')+'</div>';
+  } else html+='</div>';
+  html+='<h3>Before the crate lands</h3>'+
+   '<div class="eq"><i>t</i><sub>land</sub> = √(2<i>d</i> / <i>g</i>) = √(2 × '+fmt(d)+' / '+g+') = '+V(tl,2,'s')+'</div>'+
+   '<div class="note"><i>d</i> = <i>H</i> − 0.8 m, how far the 1.6 m crate can fall before it touches the ground.</div>'+
+   '<div class="eq"><i>v</i><sub>x</sub> ≥ <i>D</i> / <i>t</i><sub>land</sub> = '+V(f.D/tl,1,'m/s')+'</div>'+
+   '<p class="src">'+(last?'Gap and time use numbers from your last shot.':'Fire a shot to see its numbers.')+'</p>';
+  m.innerHTML=html;
+}
 function renderMath(){
   const m=$('#math');
+  if(state.mode==='falling'){ renderFallMath(m); return; }
   let src=null, reveal=true, note='';
   if(state.mode==='sandbox'){ const p=P(); src=Object.assign({},p,solve(p.a,p.v,p.h,p.g)); note='Values update as you move the sliders.'; }
   else if(state.mode==='target'){ src=state.lastCannon && state.lastCannon.g===planet().g ? state.lastCannon : null; note=src?'Numbers from your last shot. Use the same formulas to aim at the target.':'Fire a shot to see its numbers, or use the formulas to aim.'; }
@@ -1198,7 +1441,7 @@ let lastHud=0;
 function updateHUD(){
   const s=flyingShot()||activeShot; const hud=$('#hud');
   if(!s){ hud.hidden=true; return; } hud.hidden=false;
-  $('#hudTitle').textContent=s.done?(s.source==='cannon'?'Last shot, at landing':'Last throw, at landing'):'Ball in flight';
+  $('#hudTitle').textContent=s.done?(s.source==='cannon'?'Last shot':'Last throw')+(s.hitT!=null&&s.t===s.hitT?', at the hit':', at landing'):'Ball in flight';
   const vy=s.v0.y-s.g*s.t, x=Math.hypot(s.mesh.position.x-s.p0.x,s.mesh.position.z-s.p0.z);
   $('#hT').textContent=fmt(s.t,2)+' s'; $('#hX').textContent=fmt(x)+' m'; $('#hY').textContent=fmt(s.mesh.position.y)+' m';
   $('#hVx').textContent=fmt(Math.hypot(s.v0.x,s.v0.z))+' m/s'; $('#hVy').textContent=fmt(vy)+' m/s';
@@ -1215,7 +1458,7 @@ function loop(time){
   barrelPivot.rotation.x=curAngle*DEG;
   if(recoil>0){ recoil=Math.max(0,recoil-dt*2.5); barrel.position.z=0.35*Math.sin(recoil*Math.PI)*recoil; }
   if(flash.material.opacity>0){ flash.material.opacity=Math.max(0,flash.material.opacity-dt*5); flash.scale.setScalar(1+(1-flash.material.opacity)*1.5); }
-  updateShots(dt); updateParticles(dt); updateVectors();
+  updateShots(dt); updateFalling(dt); updateParticles(dt); updateVectors();
   if(!xr) updateDesktopCam(dt);
   if(uiDirty && elapsed-lastUI>0.1){ lastUI=elapsed; syncUI(); }
   if(elapsed-lastHud>0.08){ lastHud=elapsed; updateHUD(); }
